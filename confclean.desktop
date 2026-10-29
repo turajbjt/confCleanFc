@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=ConfClean FC
+Comment=Safe, comprehensive configuration cleaner for Fedora and RPM Linux distributions
+Exec=/home/turajb/cursorProjects/confCleanFc/main.py
+Icon=/home/turajb/cursorProjects/confCleanFc/assets/icon.svg
+Terminal=false
+Type=Application
+Categories=System;Utility;Settings;
+StartupNotify=true
+Keywords=cleaner;orphans;config;cache;fedora;rpm;backup;restore;bleachbit;fedy;

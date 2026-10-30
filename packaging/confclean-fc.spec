@@ -26,6 +26,10 @@ ConfClean FC is a safety-first graphical system cleaner and configuration
 purger built specifically for Fedora Linux and compatible RPM-based distributions
 (Rocky Linux, AlmaLinux, CentOS Stream, and RHEL).
 
+BETA NOTICE: This application is currently in BETA. It is provided "as is"
+without warranty of any kind. Use at your own risk. Always verify items during
+dry run mode before proceeding with deletion.
+
 Features include:
 - Deep scanning for orphaned configurations and .rpmsave / .rpmnew files
 - Automatic pre-deletion compressed .tar.gz backups with JSON manifests

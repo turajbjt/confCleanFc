@@ -4,6 +4,12 @@
 
 ---
 
+> [!WARNING]
+> ### ⚠️ BETA SOFTWARE WARNING & DISCLAIMER
+> ConfClean FC is **BETA** software. Executing commands with `--apply` or `--force` will commit real deletions and changes on disk. **Use entirely at your own risk.** Always run operations in default simulation mode first to inspect the dry-run output, and verify that you maintain independent backups before applying changes.
+
+---
+
 ## 📋 General Syntax
 
 ```bash

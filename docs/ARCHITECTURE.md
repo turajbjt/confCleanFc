@@ -2,6 +2,9 @@
 
 This document outlines the software design, component interactions, multi-threading architecture, and data pipelines powering **ConfClean FC**.
 
+> [!NOTE]
+> **Development Status**: ConfClean FC is currently in **BETA**. Architectural components, interfaces, and safelist patterns are actively maintained and hardened against system edge cases.
+
 ---
 
 ## 🏗️ High-Level System Architecture

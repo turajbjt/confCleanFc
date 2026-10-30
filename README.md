@@ -6,6 +6,20 @@ Inspired by the philosophy of tools like OrphyCleaner, ConfClean FC goes substan
 
 ---
 
+> [!CAUTION]
+> ## ⚠️ BETA SOFTWARE — USE AT YOUR OWN RISK
+>
+> **ConfClean FC is currently in active BETA.**
+>
+> While ConfClean FC is architected with multiple conservative safety layers (including an ironclad system safelist, dry-run simulation enabled by default, and automatic pre-deletion `.tar.gz` safety archives), any software that inspects, modifies, or deletes configuration files, system caches, and package dependencies carries inherent risk.
+>
+> * **USE AT YOUR OWN RISK**: This software is provided **"AS IS"**, without warranty of any kind, either express or implied, including but not limited to the implied warranties of merchantability, fitness for a particular purpose, and non-infringement.
+> * **NO LIABILITY / DISCLAIMER**: In no event shall the authors, copyright holders, maintainers, or contributors be held liable for any direct, indirect, incidental, special, exemplary, or consequential damages (including, but not limited to, loss of data, system corruption, application misbehavior, downtime, or desktop environment instability) arising in any way out of the use or misuse of this software.
+> * **INDEPENDENT BACKUPS RECOMMENDED**: While ConfClean FC automatically creates safety archives prior to any deletion, you should always maintain independent, current backups of your personal files, home directory (`~`), and critical configurations before executing cleanup operations on production machines.
+> * **ALWAYS VERIFY CANDIDATES**: Dry run simulation mode is enabled by default across both GUI and CLI. Carefully review the scanned paths and confirmed orphan status before unchecking "Dry Run" or supplying the `--apply` flag.
+
+---
+
 ## 🌟 Key Highlights & Comparison
 
 | Feature | ConfClean FC | OrphyCleaner | BleachBit | Fedy |

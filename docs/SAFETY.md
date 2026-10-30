@@ -6,6 +6,21 @@ ConfClean FC implements an **ironclad multi-layer defense system** to ensure you
 
 ---
 
+> [!CAUTION]
+> ## ⚠️ BETA STATUS, DISCLAIMER & USE AT YOUR OWN RISK
+>
+> **ConfClean FC is currently in active BETA.**
+>
+> While every feature has been built with defense-in-depth safety checks and backed by comprehensive unit tests, configuration cleaning inherently interacts with live system and user application files.
+>
+> **Please read and understand this disclaimer prior to using the application:**
+> 1. **USE STRICTLY AT YOUR OWN RISK**: The software is provided "as is", without warranty of any kind, express or implied.
+> 2. **NO LIABILITY**: Under no legal theory (contract, tort, negligence, or otherwise) shall the authors, maintainers, or contributors be liable for any damages, data loss, operating system unbootability, package removal issues, desktop environment crashes, or system downtime arising from the operation of this software.
+> 3. **INDEPENDENT BACKUP REQUIREMENT**: Although ConfClean FC automatically generates `.tar.gz` safety archives with JSON manifests prior to cleaning, **automated backups do not replace an external, independent backup strategy**. Maintain full backups of your home directory (`~`) and critical configurations prior to executing non-dry-run operations.
+> 4. **USER RESPONSIBILITY**: It is the user's sole responsibility to inspect candidate files presented during dry-run scans before approving file purge or application reset.
+
+---
+
 ## 🛑 Layer 1: The Ironclad System Safelist
 
 The core `SafetyEngine` ([`confclean/core/safelist.py`](file:///home/turajb/cursorProjects/confCleanFc/confclean/core/safelist.py)) evaluates every candidate file or directory against hardcoded protection patterns. If an item matches any protected rule, **it is immediately locked and cannot be selected or deleted under any circumstances**.

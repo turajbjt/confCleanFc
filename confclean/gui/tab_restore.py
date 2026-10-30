@@ -27,7 +27,7 @@ from PyQt6.QtWidgets import (
 
 from confclean.core.backup_manager import BackupManager, BackupMetadata
 from confclean.core.restore_manager import RestoreManager, RestoreResult
-from confclean.gui.workers import RestoreWorker
+from confclean.gui.workers import ArchiveInspectWorker, BackupListWorker, RestoreWorker
 
 
 class RestoreTab(QWidget):
@@ -40,6 +40,9 @@ class RestoreTab(QWidget):
         self.backups: List[BackupMetadata] = []
         self.current_backup: Optional[BackupMetadata] = None
         self.worker: Optional[RestoreWorker] = None
+        self.list_worker: Optional[BackupListWorker] = None
+        self.inspect_worker: Optional[ArchiveInspectWorker] = None
+        self.is_loading: bool = False
 
         self._init_ui()
 
@@ -148,9 +151,40 @@ class RestoreTab(QWidget):
         layout.addWidget(self.progress_label)
         layout.addWidget(self.progress_bar)
 
-    def load_backups(self):
-        """Loads and lists backups from disk."""
-        self.backups = self.backup_mgr.list_backups()
+    def load_backups(self, sync: bool = False):
+        """Loads and lists backups from disk asynchronously or synchronously."""
+        if self.is_loading:
+            return
+
+        # In offscreen headless unit tests or when sync=True, run synchronously
+        if sync or os.environ.get("QT_QPA_PLATFORM") == "offscreen":
+            try:
+                backups = self.backup_mgr.list_backups()
+                self._on_backups_loaded(backups)
+            except Exception as e:
+                self._on_backups_failed(str(e))
+            return
+
+        self.is_loading = True
+        self.btn_refresh.setEnabled(False)
+        self.lbl_backup_info.setText("Loading backup archives...")
+        self.progress_bar.setVisible(True)
+        self.progress_bar.setRange(0, 0)  # Indeterminate spinner/marquee
+        self.progress_label.setVisible(True)
+        self.progress_label.setText("Reading backup archives...")
+
+        self.list_worker = BackupListWorker(self.backup_mgr)
+        self.list_worker.finished.connect(self._on_backups_loaded)
+        self.list_worker.failed.connect(self._on_backups_failed)
+        self.list_worker.start()
+
+    def _on_backups_loaded(self, backups: List[BackupMetadata]):
+        self.is_loading = False
+        self.btn_refresh.setEnabled(True)
+        self.progress_bar.setVisible(False)
+        self.progress_bar.setRange(0, 100)
+        self.progress_label.setVisible(False)
+        self.backups = backups
         self.backup_list.clear()
 
         for b in self.backups:
@@ -168,6 +202,15 @@ class RestoreTab(QWidget):
             self.btn_restore_selected.setEnabled(False)
             self.btn_restore_all.setEnabled(False)
 
+    def _on_backups_failed(self, error: str):
+        self.is_loading = False
+        self.btn_refresh.setEnabled(True)
+        self.progress_bar.setVisible(False)
+        self.progress_bar.setRange(0, 100)
+        self.progress_label.setVisible(False)
+        self.lbl_backup_info.setText(f"Error loading backups: {error}")
+        QMessageBox.critical(self, "Backup Load Error", f"Failed to load backup archives: {error}")
+
     def _on_backup_selected(self, current: Optional[QListWidgetItem], previous):
         if not current:
             self.current_backup = None
@@ -177,21 +220,54 @@ class RestoreTab(QWidget):
             return
 
         b: BackupMetadata = current.data(Qt.ItemDataRole.UserRole)
+        if not b:
+            return
+
         self.current_backup = b
         self.lbl_backup_info.setText(
             f"Archive: {b.backup_id}  |  Created: {b.created_at}  |  Size: {b.formatted_size}"
         )
         self.btn_delete_backup.setEnabled(True)
-        self.btn_restore_selected.setEnabled(True)
-        self.btn_restore_all.setEnabled(True)
 
-        # Populate tree items from manifest
-        self._populate_archive_items(b.archive_path)
+        # Check if items are already present in manifest_data (fastest path: 0ms in-memory)
+        items = b.manifest_data.get("items") if b.manifest_data else None
+        if items is not None:
+            self._display_archive_items(items)
+        else:
+            if os.environ.get("QT_QPA_PLATFORM") == "offscreen":
+                items = self.restore_mgr.get_archive_items(b.archive_path)
+                self._display_archive_items(items)
+            else:
+                self.tree_items.clear()
+                loading_item = QTreeWidgetItem()
+                loading_item.setText(1, "Loading archive contents...")
+                self.tree_items.addTopLevelItem(loading_item)
+                self.btn_restore_selected.setEnabled(False)
+                self.btn_restore_all.setEnabled(False)
+
+                self.inspect_worker = ArchiveInspectWorker(self.restore_mgr, b.archive_path)
+                self.inspect_worker.finished.connect(self._on_archive_inspected)
+                self.inspect_worker.failed.connect(self._on_archive_inspect_failed)
+                self.inspect_worker.start()
+
+    def _on_archive_inspected(self, archive_path: str, items: List[dict]):
+        if self.current_backup and self.current_backup.archive_path == archive_path:
+            self._display_archive_items(items)
+
+    def _on_archive_inspect_failed(self, archive_path: str, error: str):
+        if self.current_backup and self.current_backup.archive_path == archive_path:
+            self.tree_items.clear()
+            err_item = QTreeWidgetItem()
+            err_item.setText(1, f"Failed to inspect archive: {error}")
+            self.tree_items.addTopLevelItem(err_item)
 
     def _populate_archive_items(self, archive_path: str):
-        self.tree_items.clear()
+        """Legacy helper to synchronously populate archive items."""
         items = self.restore_mgr.get_archive_items(archive_path)
+        self._display_archive_items(items)
 
+    def _display_archive_items(self, items: List[dict]):
+        self.tree_items.clear()
         for it in items:
             tree_item = QTreeWidgetItem()
             tree_item.setFlags(tree_item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
@@ -204,6 +280,10 @@ class RestoreTab(QWidget):
             tree_item.setData(0, Qt.ItemDataRole.UserRole, it)
 
             self.tree_items.addTopLevelItem(tree_item)
+
+        has_items = len(items) > 0
+        self.btn_restore_selected.setEnabled(has_items)
+        self.btn_restore_all.setEnabled(has_items)
 
     def _open_backup_dir(self):
         try:

@@ -210,7 +210,7 @@ class MainWindow(QMainWindow):
             self.tab_cache.scan_caches()
         elif index == 3 and not self.tab_reset.profiles:
             self.tab_reset.load_profiles()
-        elif index == 4:
+        elif index == 4 and not self.tab_restore.backups:
             self.tab_restore.load_backups()
 
     def _on_scanner_stats_changed(self):

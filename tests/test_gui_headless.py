@@ -41,6 +41,8 @@ from confclean.gui.tab_scanner import ScannerTab
 from confclean.gui.tab_settings import SettingsTab
 from confclean.gui.workers import (
     AppResetWorker,
+    ArchiveInspectWorker,
+    BackupListWorker,
     CacheCleanWorker,
     CleanWorker,
     PackageScanWorker,
@@ -121,6 +123,16 @@ class TestGUIHeadless(unittest.TestCase):
         self.mock_restore_mgr.restore.return_value = (res_r, "Restored")
         rest_w = RestoreWorker(self.mock_restore_mgr, "/b.tar.gz")
         rest_w.run()
+
+        # 7. BackupListWorker
+        self.mock_backup_mgr.list_backups.return_value = []
+        list_w = BackupListWorker(self.mock_backup_mgr)
+        list_w.run()
+
+        # 8. ArchiveInspectWorker
+        self.mock_restore_mgr.get_archive_items.return_value = []
+        inspect_w = ArchiveInspectWorker(self.mock_restore_mgr, "/b.tar.gz")
+        inspect_w.run()
 
     def test_scanner_tab_ui_and_filtering(self):
         tab = ScannerTab(self.mock_scanner, self.mock_cleaner, self.mock_safety)
@@ -216,6 +228,31 @@ class TestGUIHeadless(unittest.TestCase):
         self.assertEqual(tab.tree_items.topLevelItemCount(), 1)
         self.assertTrue(tab.btn_restore_selected.isEnabled())
         self.assertTrue(tab.btn_restore_all.isEnabled())
+
+    def test_restore_tab_async_loading_and_guards(self):
+        meta = BackupMetadata("backup_1", "/backups/b1.tar.gz", "/backups/b1.log", "2026-10-29", "user", 2, 4000)
+        tab = RestoreTab(self.mock_backup_mgr, self.mock_restore_mgr)
+
+        # 1. Simulate already loading guard
+        tab.is_loading = True
+        tab.load_backups()
+        self.assertEqual(tab.backup_list.count(), 0)
+
+        # 2. Simulate worker completion
+        tab._on_backups_loaded([meta])
+        self.assertFalse(tab.is_loading)
+        self.assertEqual(tab.backup_list.count(), 1)
+
+        # 3. Simulate archive inspection completion
+        items = [{"id": "item_1", "name": "app", "original_path": "/etc/app", "formatted_size": "2 KB", "reason": "Orphan"}]
+        tab._on_archive_inspected("/backups/b1.tar.gz", items)
+        self.assertEqual(tab.tree_items.topLevelItemCount(), 1)
+        self.assertTrue(tab.btn_restore_selected.isEnabled())
+
+        # 4. Simulate worker failure
+        tab._on_backups_failed("Simulated I/O failure")
+        self.assertFalse(tab.is_loading)
+        self.assertIn("Simulated I/O failure", tab.lbl_backup_info.text())
 
     def test_logs_tab_ui(self):
         tab = LogsTab(self.mock_logger)

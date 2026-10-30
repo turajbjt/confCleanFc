@@ -91,33 +91,59 @@ class BackupManager:
         return results
 
     def _read_archive_manifest(self, archive_path: str, backup_id: str, log_path: str) -> Optional[BackupMetadata]:
-        """Extracts and parses manifest.json directly from archive without full extraction."""
+        """Extracts and parses manifest directly from companion manifest or archive without full extraction."""
+        manifest_disk_path = os.path.join(self.backup_dir, f"{backup_id}.manifest.json")
+
+        # 1. Fast path: Read companion JSON manifest from disk (<1ms)
+        if os.path.isfile(manifest_disk_path):
+            try:
+                with open(manifest_disk_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    return BackupMetadata(
+                        backup_id=data.get("backup_id", backup_id),
+                        archive_path=archive_path,
+                        log_path=log_path,
+                        created_at=data.get("created_at", "Unknown"),
+                        user=data.get("user", "Unknown"),
+                        item_count=data.get("total_items", len(data.get("items", []))),
+                        total_size_bytes=data.get("total_size_bytes", os.path.getsize(archive_path)),
+                        manifest_data=data,
+                    )
+            except Exception as e:
+                self.logger.warning(f"Could not read companion manifest {manifest_disk_path}: {e}")
+
+        # 2. Archive streaming search (avoids tar.getmembers() exhaustive list creation)
         try:
             with tarfile.open(archive_path, "r:gz") as tar:
-                manifest_member = None
-                for member in tar.getmembers():
+                manifest_file = None
+                for member in tar:
                     if member.name == "manifest.json":
-                        manifest_member = member
+                        manifest_file = tar.extractfile(member)
                         break
 
-                if manifest_member:
-                    f = tar.extractfile(manifest_member)
-                    if f:
-                        data = json.load(f)
-                        return BackupMetadata(
-                            backup_id=data.get("backup_id", backup_id),
-                            archive_path=archive_path,
-                            log_path=log_path,
-                            created_at=data.get("created_at", "Unknown"),
-                            user=data.get("user", "Unknown"),
-                            item_count=data.get("total_items", 0),
-                            total_size_bytes=data.get("total_size_bytes", os.path.getsize(archive_path)),
-                            manifest_data=data,
-                        )
+                if manifest_file:
+                    data = json.load(manifest_file)
+                    # Cache companion manifest to disk for instant future reads
+                    try:
+                        with open(manifest_disk_path, "w", encoding="utf-8") as f_cache:
+                            json.dump(data, f_cache, indent=2)
+                    except OSError:
+                        pass
+
+                    return BackupMetadata(
+                        backup_id=data.get("backup_id", backup_id),
+                        archive_path=archive_path,
+                        log_path=log_path,
+                        created_at=data.get("created_at", "Unknown"),
+                        user=data.get("user", "Unknown"),
+                        item_count=data.get("total_items", len(data.get("items", []))),
+                        total_size_bytes=data.get("total_size_bytes", os.path.getsize(archive_path)),
+                        manifest_data=data,
+                    )
         except Exception as e:
             self.logger.warning(f"Could not read manifest from {archive_path}: {e}")
 
-        # Fallback if manifest is missing
+        # 3. Fallback if manifest is missing or damaged
         try:
             stat = os.stat(archive_path)
             dt = datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
@@ -169,6 +195,8 @@ class BackupManager:
         archive_path = os.path.join(self.backup_dir, archive_name)
         log_name = f"{backup_id}.log"
         log_path = os.path.join(self.backup_dir, log_name)
+        manifest_name = f"{backup_id}.manifest.json"
+        manifest_disk_path = os.path.join(self.backup_dir, manifest_name)
 
         manifest = {
             "backup_id": backup_id,
@@ -192,58 +220,65 @@ class BackupManager:
             "Archived Items Slated for Deletion:",
         ]
 
+        # Pre-build item metadata so manifest can be placed at the very front of the archive
+        items_meta = []
+        for idx, item in enumerate(items_to_backup):
+            item_id = f"item_{idx + 1:04d}"
+            archive_relpath = f"data/{item_id}/{os.path.basename(item.path)}"
+            mode_str = "0755"
+            try:
+                st = os.stat(item.path)
+                mode_str = oct(st.st_mode)[-4:]
+            except OSError:
+                pass
+
+            manifest_item = {
+                "id": item_id,
+                "name": item.name,
+                "original_path": item.path,
+                "category": item.category,
+                "is_directory": item.is_directory,
+                "size_bytes": item.size_bytes,
+                "formatted_size": item.formatted_size,
+                "archive_relpath": archive_relpath,
+                "permissions": mode_str,
+                "reason": item.reason,
+            }
+            manifest["items"].append(manifest_item)
+            items_meta.append((item, archive_relpath))
+
+            log_lines.append(
+                f"[{idx+1:03d}] DELETED_TARGET: {item.path} ({item.formatted_size})\n"
+                f"      Category: {item.category} | Type: {'Directory' if item.is_directory else 'File'}\n"
+                f"      Reason: {item.reason}\n"
+                f"      Archive Location: {archive_relpath}\n"
+            )
+
         self.logger.info(f"Initiating pre-clean backup for {len(items_to_backup)} items into {archive_path}")
 
         try:
             with tarfile.open(archive_path, "w:gz") as tar:
-                total_items = len(items_to_backup)
-                for idx, item in enumerate(items_to_backup):
-                    if progress_callback:
-                        progress_callback(f"Backing up {item.name}...", idx + 1, total_items)
+                # 1. Place manifest.json as FIRST entry in the archive for instant header lookup
+                import io
 
-                    item_id = f"item_{idx + 1:04d}"
-                    archive_relpath = f"data/{item_id}/{os.path.basename(item.path)}"
-
-                    # Add item to tarball
-                    if os.path.exists(item.path):
-                        tar.add(item.path, arcname=archive_relpath, recursive=True)
-
-                    mode_str = "0755"
-                    try:
-                        st = os.stat(item.path)
-                        mode_str = oct(st.st_mode)[-4:]
-                    except OSError:
-                        pass
-
-                    manifest_item = {
-                        "id": item_id,
-                        "name": item.name,
-                        "original_path": item.path,
-                        "category": item.category,
-                        "is_directory": item.is_directory,
-                        "size_bytes": item.size_bytes,
-                        "formatted_size": item.formatted_size,
-                        "archive_relpath": archive_relpath,
-                        "permissions": mode_str,
-                        "reason": item.reason,
-                    }
-                    manifest["items"].append(manifest_item)
-
-                    log_lines.append(
-                        f"[{idx+1:03d}] DELETED_TARGET: {item.path} ({item.formatted_size})\n"
-                        f"      Category: {item.category} | Type: {'Directory' if item.is_directory else 'File'}\n"
-                        f"      Reason: {item.reason}\n"
-                        f"      Archive Location: {archive_relpath}\n"
-                    )
-
-                # Write manifest inside the tarball
                 manifest_json_bytes = json.dumps(manifest, indent=2).encode("utf-8")
                 tarinfo = tarfile.TarInfo(name="manifest.json")
                 tarinfo.size = len(manifest_json_bytes)
                 tarinfo.mtime = time.time()
-                import io
-
                 tar.addfile(tarinfo, io.BytesIO(manifest_json_bytes))
+
+                # 2. Add each item to the archive
+                total_items = len(items_to_backup)
+                for idx, (item, archive_relpath) in enumerate(items_meta):
+                    if progress_callback:
+                        progress_callback(f"Backing up {item.name}...", idx + 1, total_items)
+
+                    if os.path.exists(item.path):
+                        tar.add(item.path, arcname=archive_relpath, recursive=True)
+
+            # Write companion JSON manifest on disk for instant reading (<1ms)
+            with open(manifest_disk_path, "w", encoding="utf-8") as f_manifest:
+                json.dump(manifest, f_manifest, indent=2)
 
             # Write companion human-readable .log file on disk
             log_lines.append("-" * 70)
@@ -271,18 +306,25 @@ class BackupManager:
                     os.remove(archive_path)
                 except OSError:
                     pass
+            if os.path.exists(manifest_disk_path):
+                try:
+                    os.remove(manifest_disk_path)
+                except OSError:
+                    pass
             return False, None, None, f"Backup creation failed: {e}"
 
     def delete_backup(self, backup_id: str) -> bool:
-        """Deletes a backup archive and its corresponding log file."""
+        """Deletes a backup archive and its corresponding log and manifest files."""
         archive_path = os.path.join(self.backup_dir, f"{backup_id}.tar.gz")
         log_path = os.path.join(self.backup_dir, f"{backup_id}.log")
-        success = True
+        manifest_path = os.path.join(self.backup_dir, f"{backup_id}.manifest.json")
         try:
             if os.path.exists(archive_path):
                 os.remove(archive_path)
             if os.path.exists(log_path):
                 os.remove(log_path)
+            if os.path.exists(manifest_path):
+                os.remove(manifest_path)
             self.logger.info(f"Deleted backup archive: {backup_id}")
             return True
         except OSError as e:

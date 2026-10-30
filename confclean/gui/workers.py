@@ -7,6 +7,7 @@ from typing import List, Optional
 from PyQt6.QtCore import QThread, pyqtSignal
 
 from confclean.core.app_resetter import AppResetProfile, AppResetter
+from confclean.core.backup_manager import BackupManager, BackupMetadata
 from confclean.core.cache_cleaner import CacheCategory, CacheCleaner
 from confclean.core.cleaner import CleanResult, SafeCleaner
 from confclean.core.package_manager import PackageManager, PackageSuggestion
@@ -168,3 +169,41 @@ class RestoreWorker(QThread):
             self.finished.emit(res, summary)
         except Exception as e:
             self.failed.emit(str(e))
+
+
+class BackupListWorker(QThread):
+    """Worker for asynchronously discovering and listing backup archives."""
+
+    progress = pyqtSignal(str, int, int)
+    finished = pyqtSignal(list)  # List[BackupMetadata]
+    failed = pyqtSignal(str)
+
+    def __init__(self, backup_mgr: BackupManager):
+        super().__init__()
+        self.backup_mgr = backup_mgr
+
+    def run(self):
+        try:
+            backups = self.backup_mgr.list_backups()
+            self.finished.emit(backups)
+        except Exception as e:
+            self.failed.emit(str(e))
+
+
+class ArchiveInspectWorker(QThread):
+    """Worker for asynchronously inspecting items inside a backup archive."""
+
+    finished = pyqtSignal(str, list)  # archive_path, List[dict]
+    failed = pyqtSignal(str, str)     # archive_path, error_msg
+
+    def __init__(self, restore_mgr: RestoreManager, archive_path: str):
+        super().__init__()
+        self.restore_mgr = restore_mgr
+        self.archive_path = archive_path
+
+    def run(self):
+        try:
+            items = self.restore_mgr.get_archive_items(self.archive_path)
+            self.finished.emit(self.archive_path, items)
+        except Exception as e:
+            self.failed.emit(self.archive_path, str(e))

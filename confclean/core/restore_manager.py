@@ -34,22 +34,44 @@ class RestoreManager:
         self.logger = get_logger()
 
     def get_archive_items(self, archive_path: str) -> List[dict]:
-        """Reads and returns the list of item dictionaries from manifest.json inside archive."""
+        """Reads and returns the list of item dictionaries from manifest.json inside archive or disk companion."""
         if not os.path.isfile(archive_path):
             return []
 
+        # 1. Fast check for companion manifest on disk (<1ms)
+        manifest_disk_path = None
+        if archive_path.endswith(".tar.gz"):
+            manifest_disk_path = archive_path[:-7] + ".manifest.json"
+        elif archive_path.endswith(".tgz"):
+            manifest_disk_path = archive_path[:-4] + ".manifest.json"
+
+        if manifest_disk_path and os.path.isfile(manifest_disk_path):
+            try:
+                with open(manifest_disk_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    return data.get("items", [])
+            except Exception as e:
+                self.logger.warning(f"Could not read companion manifest {manifest_disk_path}: {e}")
+
+        # 2. Extract from tarball streaming without full getmembers()
         try:
             with tarfile.open(archive_path, "r:gz") as tar:
-                manifest_member = None
-                for m in tar.getmembers():
+                manifest_file = None
+                for m in tar:
                     if m.name == "manifest.json":
-                        manifest_member = m
+                        manifest_file = tar.extractfile(m)
                         break
-                if manifest_member:
-                    f = tar.extractfile(manifest_member)
-                    if f:
-                        data = json.load(f)
-                        return data.get("items", [])
+
+                if manifest_file:
+                    data = json.load(manifest_file)
+                    # Cache companion manifest to disk for instant future queries
+                    if manifest_disk_path:
+                        try:
+                            with open(manifest_disk_path, "w", encoding="utf-8") as f_out:
+                                json.dump(data, f_out, indent=2)
+                        except OSError:
+                            pass
+                    return data.get("items", [])
         except Exception as e:
             self.logger.error(f"Failed to read archive items from {archive_path}: {e}")
 

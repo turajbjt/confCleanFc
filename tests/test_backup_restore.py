@@ -93,11 +93,22 @@ class TestBackupAndRestore(unittest.TestCase):
         self.assertIsNotNone(arch_path)
         self.assertTrue(os.path.exists(arch_path))
         self.assertTrue(os.path.exists(log_p))
+        manifest_p = arch_path[:-7] + ".manifest.json"
+        self.assertTrue(os.path.exists(manifest_p))
 
-        # Check manifest directly inside archive
+        # Check manifest directly inside archive / companion
         items_inside = self.restore_mgr.get_archive_items(arch_path)
         self.assertEqual(len(items_inside), 1)
         self.assertEqual(items_inside[0]["name"], "fake_app_config")
+
+        # Test fallback when companion manifest is removed from disk
+        os.remove(manifest_p)
+        self.assertFalse(os.path.exists(manifest_p))
+        # list_backups should extract from archive and restore companion cache
+        backups_fallback = self.backup_mgr.list_backups()
+        self.assertEqual(len(backups_fallback), 1)
+        self.assertEqual(backups_fallback[0].item_count, 1)
+        self.assertTrue(os.path.exists(manifest_p))
 
         # 2. Check list_backups
         backups = self.backup_mgr.list_backups()
@@ -234,6 +245,8 @@ class TestBackupAndRestore(unittest.TestCase):
         self.assertEqual(len(self.backup_mgr.list_backups()), 0)
         self.assertFalse(os.path.exists(arch_path))
         self.assertFalse(os.path.exists(log_p))
+        manifest_p = arch_path[:-7] + ".manifest.json"
+        self.assertFalse(os.path.exists(manifest_p))
 
 
 if __name__ == "__main__":

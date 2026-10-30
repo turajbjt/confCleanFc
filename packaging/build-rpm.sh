@@ -40,6 +40,7 @@ cp "${ROOT_DIR}/README.md" "${TMP_SRC}/"
 cp "${ROOT_DIR}/CONTRIBUTING.md" "${TMP_SRC}/"
 cp "${ROOT_DIR}/LICENSE" "${TMP_SRC}/"
 cp "${ROOT_DIR}/requirements.txt" "${TMP_SRC}/"
+cp "${ROOT_DIR}/pyproject.toml" "${TMP_SRC}/"
 
 # Clean any pycache in source archive
 find "${TMP_SRC}" -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true

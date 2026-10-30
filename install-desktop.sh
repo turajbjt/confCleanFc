@@ -9,6 +9,17 @@ ICONS_DIR="${HOME}/.local/share/icons/hicolor/scalable/apps"
 mkdir -p "${APPS_DIR}"
 mkdir -p "${ICONS_DIR}"
 
+# Check for GUI dependency (PyQt6)
+if ! python3 -c "import PyQt6" 2>/dev/null; then
+    echo "⚠️  Warning: PyQt6 was not found in python3."
+    echo "   The graphical user interface requires PyQt6."
+    echo "   To install on Fedora / RHEL / CentOS / Rocky:"
+    echo "     sudo dnf install python3-pyqt6"
+    echo "   Or via pip:"
+    echo "     pip install PyQt6"
+    echo ""
+fi
+
 # Copy icon
 cp "${SCRIPT_DIR}/assets/icon.svg" "${ICONS_DIR}/confclean.svg"
 

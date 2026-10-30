@@ -1,4 +1,14 @@
 # ConfClean FC Dependencies
-# On Fedora / RHEL / CentOS / Rocky, you can install the system packages:
-#   sudo dnf install python3-pyqt6 python3-rpm
+#
+# Fedora / RHEL / CentOS Stream / Rocky Linux / AlmaLinux (System Packages):
+#   sudo dnf install python3-pyqt6 python3-rpm python3-psutil
+#
+# Ubuntu / Debian:
+#   sudo apt install python3-pyqt6 python3-psutil
+#
+# Arch Linux:
+#   sudo pacman -S python-pyqt6 python-psutil
+#
+# Python Pip Packages:
 PyQt6>=6.5.0
+psutil>=5.9.0

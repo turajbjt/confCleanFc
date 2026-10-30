@@ -38,6 +38,30 @@ Inspired by the philosophy of tools like OrphyCleaner, ConfClean FC goes substan
 
 ## 🚀 Quick Start
 
+### 📋 Prerequisites & GUI Dependencies
+
+ConfClean FC requires **Python 3.9+** and **PyQt6** for its graphical interface:
+
+* **Fedora / RHEL / CentOS Stream / Rocky Linux / AlmaLinux (DNF)**:
+  ```bash
+  sudo dnf install python3-pyqt6 python3-rpm python3-psutil
+  ```
+* **Ubuntu / Debian (APT)**:
+  ```bash
+  sudo apt install python3-pyqt6 python3-psutil
+  ```
+* **Arch Linux (Pacman)**:
+  ```bash
+  sudo pacman -S python-pyqt6 python-psutil
+  ```
+* **Python Virtual Environments / Pip**:
+  ```bash
+  pip install -r requirements.txt
+  ```
+
+> [!TIP]
+> If PyQt6 is not installed on your system, ConfClean FC can still run in headless CLI mode via `--scan`, `--clean`, `--cache`, etc., or will display an informative prompt with the exact command to install PyQt6.
+
 ### 1. Install via RPM Package (Recommended)
 You can directly install the pre-built `.rpm` package using `dnf` or `rpm`:
 ```bash

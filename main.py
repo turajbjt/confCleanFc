@@ -63,8 +63,44 @@ Examples:
             run_cli(args)
             return
 
-        from confclean.gui.app import run_gui
-        run_gui()
+        try:
+            from confclean.gui.app import run_gui
+            run_gui()
+        except ImportError as e:
+            err_msg = (
+                "\n"
+                "=================================================================\n"
+                "[ERROR] Missing GUI Dependency: PyQt6 is required to run the GUI.\n"
+                "=================================================================\n"
+                f"Details: {e}\n\n"
+                "To install the required package on Fedora / RHEL / CentOS / Rocky:\n"
+                "  sudo dnf install python3-pyqt6\n\n"
+                "Or install via pip:\n"
+                "  pip install PyQt6\n\n"
+                "Alternatively, you can run ConfClean FC in terminal mode without a GUI:\n"
+                "  python3 main.py --scan\n"
+                "  python3 main.py --help\n"
+                "=================================================================\n"
+            )
+            print(err_msg, file=sys.stderr)
+
+            # Attempt desktop notification if run from a graphical session
+            try:
+                import subprocess
+                subprocess.run(
+                    [
+                        "notify-send",
+                        "-u", "critical",
+                        "ConfClean FC - Missing Dependency",
+                        "PyQt6 is required to run the GUI.\nRun: sudo dnf install python3-pyqt6",
+                    ],
+                    check=False,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            except Exception:
+                pass
+            sys.exit(1)
 
 
 if __name__ == "__main__":

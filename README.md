@@ -24,21 +24,41 @@ Inspired by the philosophy of tools like OrphyCleaner, ConfClean FC goes substan
 
 ## 🚀 Quick Start
 
-### 1. Launch the GUI
-Kick off the application directly from the CLI:
+### 1. Install via RPM Package (Recommended)
+You can directly install the pre-built `.rpm` package using `dnf` or `rpm`:
+```bash
+# Install locally with automatic dependency resolution:
+sudo dnf install ./confclean-fc-1.0.0-1.fc44.noarch.rpm
+
+# Or with rpm:
+sudo rpm -ivh ./confclean-fc-1.0.0-1.fc44.noarch.rpm
+```
+
+Once installed, launch ConfClean FC from your application menu or directly in terminal:
+```bash
+confclean-fc        # or simply: confclean
+```
+
+To rebuild the RPM package at any time:
+```bash
+./packaging/build-rpm.sh
+```
+
+### 2. Run Directly from Source (No Installation Needed)
+Kick off the application directly from the repository:
 ```bash
 ./main.py
 # or
 python3 main.py
 ```
 
-### 2. Optional: Install Desktop Application Launcher
-To integrate ConfClean FC directly into your GNOME Application Menu with its high-resolution SVG icon:
+### 3. Optional: Install Per-User Desktop Application Launcher
+If running from source rather than RPM:
 ```bash
 ./install-desktop.sh
 ```
 
-### 3. CLI Commands (Headless / Terminal-Driven)
+### 4. CLI Commands (Headless / Terminal-Driven)
 ConfClean FC also works seamlessly without a display. **Safety Note:** Deletion operations run in **DRY RUN mode by default** to prevent accidental loss; use `--apply` (or `--no-dry-run`) to commit changes:
 
 ```bash

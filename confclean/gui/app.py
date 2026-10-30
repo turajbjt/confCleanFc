@@ -63,9 +63,15 @@ class MainWindow(QMainWindow):
         self.auto_scan_on_nav = auto_scan_on_nav
 
         # Set window icon
-        icon_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "assets", "icon.svg")
-        if os.path.isfile(icon_path):
-            self.setWindowIcon(QIcon(icon_path))
+        icon_candidates = [
+            os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "assets", "icon.svg"),
+            "/usr/share/confclean-fc/assets/icon.svg",
+            "/usr/share/icons/hicolor/scalable/apps/confclean-fc.svg",
+        ]
+        for icon_path in icon_candidates:
+            if os.path.isfile(icon_path):
+                self.setWindowIcon(QIcon(icon_path))
+                break
 
         # Initialize core engines
         self.logger = get_logger()

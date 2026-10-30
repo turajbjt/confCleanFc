@@ -3,3 +3,6 @@ __pycache__/
 *$py.class
 *.log
 .pytest_cache/
+rpmbuild/
+dist/
+*.rpm

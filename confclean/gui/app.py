@@ -64,6 +64,7 @@ class MainWindow(QMainWindow):
         self.auto_scan_on_nav = auto_scan_on_nav
 
         # Set window icon
+        self.app_icon_path = None
         icon_candidates = [
             os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "assets", "icon.svg"),
             "/usr/share/confclean-fc/assets/icon.svg",
@@ -71,6 +72,7 @@ class MainWindow(QMainWindow):
         ]
         for icon_path in icon_candidates:
             if os.path.isfile(icon_path):
+                self.app_icon_path = icon_path
                 self.setWindowIcon(QIcon(icon_path))
                 break
 
@@ -105,6 +107,18 @@ class MainWindow(QMainWindow):
         header.setObjectName("header_bar")
         h_layout = QHBoxLayout(header)
         h_layout.setContentsMargins(18, 12, 18, 12)
+        h_layout.setSpacing(8)
+
+        # App Logo Icon left of the application title
+        logo_icon = QIcon(self.app_icon_path) if getattr(self, "app_icon_path", None) else self.windowIcon()
+        if not logo_icon.isNull():
+            pix = logo_icon.pixmap(24, 24)
+            if not pix.isNull():
+                self.lbl_logo = QLabel()
+                self.lbl_logo.setObjectName("app_logo")
+                self.lbl_logo.setPixmap(pix)
+                self.lbl_logo.setFixedSize(24, 24)
+                h_layout.addWidget(self.lbl_logo)
 
         title_lbl = QLabel("ConfClean FC")
         title_lbl.setObjectName("app_title")

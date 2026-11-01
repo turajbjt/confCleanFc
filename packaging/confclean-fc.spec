@@ -1,5 +1,5 @@
 Name:           confclean-fc
-Version:        1.1.2
+Version:        1.1.3
 Release:        1%{?dist}
 Summary:        Fedora & RPM system cleaner and orphan configuration purger
 
@@ -127,6 +127,9 @@ fi
 %{_datadir}/polkit-1/actions/io.github.confclean_fc.policy
 
 %changelog
+* Sun Nov 01 2026 James Turansky <turajb@gmail.com> - 1.1.3-1
+- Add application logo icon to header left of ConfClean FC title
+
 * Sun Nov 01 2026 James Turansky <turajb@gmail.com> - 1.1.2-1
 - Add copyright notice for BuildDesignCreate.com under safety rules
 

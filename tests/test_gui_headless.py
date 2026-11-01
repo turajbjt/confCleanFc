@@ -14,7 +14,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QLabel
 
 # Ensure QApplication is initialized for offscreen tests
 app = QApplication.instance()
@@ -390,6 +390,8 @@ class TestGUIHeadless(unittest.TestCase):
             auto_scan_on_nav=False,
         )
         self.assertEqual(win.stack.count(), 7)
+        self.assertTrue(hasattr(win, "lbl_logo"))
+        self.assertFalse(win.lbl_logo.pixmap().isNull())
 
         # Test sidebar switches
         win.sidebar.setCurrentRow(1)

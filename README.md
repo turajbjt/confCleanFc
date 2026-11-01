@@ -101,7 +101,23 @@ If running from source rather than RPM:
 ./install-desktop.sh
 ```
 
-### 4. CLI Commands (Headless / Terminal-Driven)
+### 4. How to Uninstall ConfClean FC
+* **If installed via RPM**:
+  ```bash
+  sudo dnf remove confclean-fc
+  # or: sudo rpm -e confclean-fc
+  ```
+* **If running from source with desktop launcher**:
+  ```bash
+  ./uninstall-desktop.sh
+  ```
+* **(Optional) Purge application safety archives and logs**:
+  ```bash
+  rm -rf ~/.local/share/confclean-fc ~/.config/confclean-fc
+  ```
+For complete details, see the dedicated 📖 **[Installation & Uninstallation Guide](docs/INSTALLATION.md)**.
+
+### 5. CLI Commands (Headless / Terminal-Driven)
 ConfClean FC also works seamlessly without a display. **Safety Note:** Deletion operations run in **DRY RUN mode by default** to prevent accidental loss; use `--apply` (or `--no-dry-run`) to commit changes:
 
 ```bash
@@ -179,6 +195,7 @@ The **Restore & Backups** tab allows you to:
 ## 📚 Detailed Documentation
 
 For in-depth technical references and developer guides, consult the dedicated manuals:
+* 📥 **[Installation & Uninstallation Guide](docs/INSTALLATION.md)**: Full walkthrough for RPM installation, running from source, desktop shortcuts, and clean uninstallation.
 * 🏛️ **[System Architecture & Internals](docs/ARCHITECTURE.md)**: Deep dive into the detection engine, scanning heuristics, thread worker pool, and data flows.
 * 💻 **[CLI Reference Manual](docs/CLI_REFERENCE.md)**: Detailed guide to flags, dry-run syntax, headless operation, and cron/script integration.
 * 🛡️ **[Safety Specification](docs/SAFETY.md)**: Comprehensive rules on the ironclad safelist, credential protection, and kernel retention.
@@ -217,9 +234,15 @@ confCleanFc/
 │   │   ├── tab_settings.py   # Custom Whitelist & Privilege Settings view
 │   │   └── workers.py        # Non-blocking QThread background workers
 │   └── cli.py                # Command-line interface implementation
-├── tests/                    # Automated unit test suite (13 tests)
+├── docs/                     # Detailed architectural and user guides
+│   ├── ARCHITECTURE.md       # Technical design and subsystem dataflows
+│   ├── CLI_REFERENCE.md      # Headless syntax and examples
+│   ├── INSTALLATION.md       # Installation, desktop shortcuts, and uninstallation
+│   └── SAFETY.md             # Security and protection guarantees
+├── tests/                    # Automated unit test suite (108 tests)
 ├── confclean.desktop         # Freedesktop application shortcut
 ├── install-desktop.sh        # Installer script for GNOME Application Grid
+├── uninstall-desktop.sh      # Uninstaller script for desktop shortcuts
 ├── main.py                   # Main executable entry point
 ├── requirements.txt          # Python dependencies
 └── README.md

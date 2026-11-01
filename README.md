@@ -227,7 +227,7 @@ confCleanFc/
 
 ## 🔧 Distro Compatibility
 
-* **Fedora 40, 41, 42, 44+** (Workstation, Silverblue, KDE Spin)
+* **Fedora 40, 41, 42, 43, 44+** (Workstation, Silverblue, KDE Spin, Kinoite)
 * **Rocky Linux 8, 9, 10**
 * **CentOS Stream 8, 9, 10**
 * **Red Hat Enterprise Linux (RHEL) 8, 9, 10**

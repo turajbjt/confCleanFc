@@ -207,3 +207,31 @@ class ArchiveInspectWorker(QThread):
             self.finished.emit(self.archive_path, items)
         except Exception as e:
             self.failed.emit(self.archive_path, str(e))
+
+
+class PackageRemovalWorker(QThread):
+    """Worker for executing package removal commands asynchronously in background."""
+
+    finished = pyqtSignal(int, str)  # returncode, output
+    failed = pyqtSignal(str)
+
+    def __init__(self, cmd: List[str]):
+        super().__init__()
+        self.cmd = cmd
+
+    def run(self):
+        import subprocess
+
+        try:
+            res = subprocess.run(
+                self.cmd,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            out = res.stdout or ""
+            err = res.stderr or ""
+            combined = (out + "\n" + err).strip()
+            self.finished.emit(res.returncode, combined)
+        except Exception as e:
+            self.failed.emit(str(e))

@@ -45,6 +45,7 @@ from confclean.gui.workers import (
     BackupListWorker,
     CacheCleanWorker,
     CleanWorker,
+    PackageRemovalWorker,
     PackageScanWorker,
     RestoreWorker,
     ScanWorker,
@@ -133,6 +134,16 @@ class TestGUIHeadless(unittest.TestCase):
         self.mock_restore_mgr.get_archive_items.return_value = []
         inspect_w = ArchiveInspectWorker(self.mock_restore_mgr, "/b.tar.gz")
         inspect_w.run()
+
+        # 9. PackageRemovalWorker
+        with patch("subprocess.run") as mock_sub_run:
+            mock_res = MagicMock()
+            mock_res.returncode = 0
+            mock_res.stdout = "Removed"
+            mock_res.stderr = ""
+            mock_sub_run.return_value = mock_res
+            rem_w = PackageRemovalWorker(["echo", "done"])
+            rem_w.run()
 
     def test_scanner_tab_ui_and_filtering(self):
         tab = ScannerTab(self.mock_scanner, self.mock_cleaner, self.mock_safety)
@@ -431,10 +442,18 @@ class TestGUIHeadless(unittest.TestCase):
         from PyQt6.QtWidgets import QMessageBox
         self.mock_quest.return_value = QMessageBox.StandardButton.Yes
         self.mock_pkg.get_removal_command.return_value = ["flatpak", "uninstall", "--unused", "-y"]
-        with patch("subprocess.Popen") as mock_popen:
+        with patch.object(PackageRemovalWorker, "start") as mock_worker_start:
             tab._remove_selected_packages()
             self.mock_pkg.get_removal_command.assert_called_once_with([s_flatpak, s_snap])
-            mock_popen.assert_called_once()
+            self.assertEqual(tab.progress_bar.maximum(), 0)  # Indeterminate activity bar
+            self.assertFalse(tab.progress_bar.isHidden())
+            mock_worker_start.assert_called_once()
+
+        # Test completion and automatic package re-analysis
+        with patch.object(tab, "start_package_scan") as mock_reanalyze:
+            tab._on_removal_finished(0, "Success")
+            self.assertTrue(tab.progress_bar.isHidden())
+            mock_reanalyze.assert_called_once()
 
 
 if __name__ == "__main__":

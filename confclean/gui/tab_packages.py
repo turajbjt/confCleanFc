@@ -23,7 +23,7 @@ from PyQt6.QtWidgets import (
 )
 
 from confclean.core.package_manager import PackageManager, PackageSuggestion
-from confclean.gui.workers import PackageScanWorker
+from confclean.gui.workers import PackageRemovalWorker, PackageScanWorker
 
 
 class PackageTab(QWidget):
@@ -34,6 +34,7 @@ class PackageTab(QWidget):
         self.pkg_mgr = pkg_mgr
         self.suggestions: List[PackageSuggestion] = []
         self.worker: Optional[PackageScanWorker] = None
+        self.removal_worker: Optional[PackageRemovalWorker] = None
 
         self._init_ui()
 
@@ -112,8 +113,9 @@ class PackageTab(QWidget):
         """Starts background package scan."""
         self.btn_refresh.setEnabled(False)
         self.btn_remove.setEnabled(False)
-        self.progress_bar.setVisible(True)
+        self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(0)
+        self.progress_bar.setVisible(True)
         self.progress_label.setVisible(True)
         self.progress_label.setText("Querying DNF package database...")
 
@@ -223,7 +225,7 @@ class PackageTab(QWidget):
         cmd_str = " ".join(cmd)
 
         msg = (
-            f"You have selected {len(selected_pkgs)} packages for removal.\n\n"
+            f"You have selected {len(selected_pkgs)} package(s) for removal.\n\n"
             f"Command to execute:\n{cmd_str}\n\n"
             f"Do you want to proceed with package removal?"
         )
@@ -238,13 +240,57 @@ class PackageTab(QWidget):
         if reply != QMessageBox.StandardButton.Yes:
             return
 
-        try:
-            # Run terminal or pkexec command
-            subprocess.Popen(cmd)
-            QMessageBox.information(
-                self,
-                "Package Removal Started",
-                "Package removal process launched. Follow any root authorization prompts on screen.",
+        # Disable interactive controls while removal runs
+        self.btn_refresh.setEnabled(False)
+        self.btn_remove.setEnabled(False)
+        self.table.setEnabled(False)
+
+        # Show activity bar (indeterminate pulsing mode)
+        self.progress_bar.setRange(0, 0)
+        self.progress_bar.setVisible(True)
+        self.progress_label.setVisible(True)
+        self.progress_label.setText("Removing selected packages... Please authenticate if prompted.")
+        self.lbl_summary.setText("Removal in progress... Please follow any authentication prompts.")
+
+        # Start removal worker in background
+        self.removal_worker = PackageRemovalWorker(cmd)
+        self.removal_worker.finished.connect(self._on_removal_finished)
+        self.removal_worker.failed.connect(self._on_removal_failed)
+        self.removal_worker.start()
+
+    def _on_removal_finished(self, returncode: int, output: str):
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setVisible(False)
+        self.progress_label.setVisible(False)
+        self.table.setEnabled(True)
+        self.btn_refresh.setEnabled(True)
+        self.btn_remove.setEnabled(True)
+
+        if returncode == 0:
+            msg = (
+                "Package removal process completed successfully!\n\n"
+                "Click OK to re-analyze installed packages."
             )
-        except Exception as e:
-            QMessageBox.critical(self, "Execution Error", f"Failed to execute command: {e}")
+            QMessageBox.information(self, "Package Removal Complete", msg)
+        else:
+            detail = output.strip() if output.strip() else f"Process exited with status code {returncode}."
+            if len(detail) > 400:
+                detail = detail[:400] + "..."
+            msg = (
+                f"Package removal process did not complete cleanly (exit code {returncode}).\n\n"
+                f"Details:\n{detail}\n\n"
+                "Click OK to re-analyze installed packages."
+            )
+            QMessageBox.warning(self, "Package Removal Incomplete or Cancelled", msg)
+
+        # Re-analyze packages to update list upon confirmation
+        self.start_package_scan()
+
+    def _on_removal_failed(self, error: str):
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setVisible(False)
+        self.progress_label.setVisible(False)
+        self.table.setEnabled(True)
+        self.btn_refresh.setEnabled(True)
+        self.btn_remove.setEnabled(True)
+        QMessageBox.critical(self, "Execution Error", f"Failed to execute package removal: {error}")

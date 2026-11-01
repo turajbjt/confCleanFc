@@ -106,18 +106,19 @@ class MainWindow(QMainWindow):
         header = QFrame()
         header.setObjectName("header_bar")
         h_layout = QHBoxLayout(header)
-        h_layout.setContentsMargins(18, 12, 18, 12)
-        h_layout.setSpacing(8)
+        h_layout.setContentsMargins(18, 10, 18, 10)
+        h_layout.setSpacing(10)
 
-        # App Logo Icon left of the application title
+        # App Logo Icon left of the application title (75% larger: 42x42 px)
         logo_icon = QIcon(self.app_icon_path) if getattr(self, "app_icon_path", None) else self.windowIcon()
         if not logo_icon.isNull():
-            pix = logo_icon.pixmap(24, 24)
+            pix = logo_icon.pixmap(42, 42)
             if not pix.isNull():
                 self.lbl_logo = QLabel()
                 self.lbl_logo.setObjectName("app_logo")
                 self.lbl_logo.setPixmap(pix)
-                self.lbl_logo.setFixedSize(24, 24)
+                self.lbl_logo.setFixedSize(42, 42)
+                self.lbl_logo.setScaledContents(True)
                 h_layout.addWidget(self.lbl_logo)
 
         title_lbl = QLabel("ConfClean FC")

@@ -392,6 +392,8 @@ class TestGUIHeadless(unittest.TestCase):
         self.assertEqual(win.stack.count(), 7)
         self.assertTrue(hasattr(win, "lbl_logo"))
         self.assertFalse(win.lbl_logo.pixmap().isNull())
+        self.assertEqual(win.lbl_logo.width(), 42)
+        self.assertEqual(win.lbl_logo.height(), 42)
 
         # Test sidebar switches
         win.sidebar.setCurrentRow(1)

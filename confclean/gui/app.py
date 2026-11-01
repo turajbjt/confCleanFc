@@ -209,6 +209,8 @@ class MainWindow(QMainWindow):
             self.tab_scanner.start_scan()
         elif index == 1 and not self.tab_cache.categories:
             self.tab_cache.scan_caches()
+        elif index == 2 and not self.tab_packages.suggestions:
+            self.tab_packages.start_package_scan()
         elif index == 3 and not self.tab_reset.profiles:
             self.tab_reset.load_profiles()
         elif index == 4 and not self.tab_restore.backups:

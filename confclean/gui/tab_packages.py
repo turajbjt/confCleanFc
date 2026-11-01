@@ -111,6 +111,9 @@ class PackageTab(QWidget):
 
     def start_package_scan(self):
         """Starts background package scan."""
+        if self.worker is not None and self.worker.isRunning():
+            return
+
         self.btn_refresh.setEnabled(False)
         self.btn_remove.setEnabled(False)
         self.progress_bar.setRange(0, 100)

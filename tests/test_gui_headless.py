@@ -325,6 +325,23 @@ class TestGUIHeadless(unittest.TestCase):
         win.sidebar.setCurrentRow(4)
         self.assertEqual(win.stack.currentIndex(), 4)
 
+        # Test auto-scan on navigating to Package Manager tab when list is blank
+        win_auto = MainWindow(
+            scanner=self.mock_scanner,
+            cleaner=self.mock_cleaner,
+            safety=self.mock_safety,
+            backup_mgr=self.mock_backup_mgr,
+            restore_mgr=self.mock_restore_mgr,
+            cache_cleaner=self.mock_cache,
+            pkg_mgr=self.mock_pkg,
+            app_resetter=self.mock_resetter,
+            auto_scan_on_nav=True,
+        )
+        with patch.object(win_auto.tab_packages, "start_package_scan") as mock_pkg_scan:
+            win_auto.sidebar.setCurrentRow(2)
+            self.assertEqual(win_auto.stack.currentIndex(), 2)
+            mock_pkg_scan.assert_called_once()
+
     @patch("confclean.gui.tab_scanner.get_rpm_diff")
     def test_rpm_diff_dialog(self, mock_diff):
         mock_diff.return_value = (

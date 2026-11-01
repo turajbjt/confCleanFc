@@ -6,7 +6,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 PKG_NAME="confclean-fc"
-PKG_VERSION="1.1.0"
+PKG_VERSION="${PKG_VERSION:-$(PYTHONPATH="${ROOT_DIR}" python3 -c "import confclean; print(confclean.__version__)")}"
 DIST_DIR="${ROOT_DIR}/dist"
 RPMBUILD_DIR="${ROOT_DIR}/rpmbuild"
 

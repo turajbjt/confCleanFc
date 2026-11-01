@@ -1,5 +1,5 @@
 Name:           confclean-fc
-Version:        1.1.0
+Version:        1.1.1
 Release:        1%{?dist}
 Summary:        Fedora & RPM system cleaner and orphan configuration purger
 
@@ -127,6 +127,14 @@ fi
 %{_datadir}/polkit-1/actions/io.github.confclean_fc.policy
 
 %changelog
+* Sun Nov 01 2026 James Turansky <turajb@gmail.com> - 1.1.1-1
+- Fix pkexec root relaunch with Wayland/X11 display preservation
+- Add Polkit GUI execution policy action
+- Auto-size table name columns to width of longest entry
+- Auto-run package analysis when navigating to empty Package Manager
+- Add progress bar and confirmation for package removal
+- Add uninstallation guide and desktop uninstaller script
+
 * Sun Nov 01 2026 James Turansky <turajb@plugnpay.com> - 1.1.0-1
 - Add broken .desktop and autostart entry detection and safe cleaning
 - Add Flatpak unused runtime and Snap disabled revision pruning

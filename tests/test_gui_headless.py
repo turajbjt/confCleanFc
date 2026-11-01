@@ -38,7 +38,7 @@ from confclean.gui.tab_logs import LogsTab
 from confclean.gui.tab_packages import PackageTab
 from confclean.gui.tab_restore import RestoreTab
 from confclean.gui.tab_scanner import RpmDiffDialog, ScannerTab
-from confclean.gui.tab_settings import SettingsTab
+from confclean.gui.tab_settings import ElevationWorker, SettingsTab
 from confclean.gui.workers import (
     AppResetWorker,
     ArchiveInspectWorker,
@@ -282,6 +282,74 @@ class TestGUIHeadless(unittest.TestCase):
         tab.txt_whitelist_input.setText("new_item")
         tab._add_to_whitelist()
         self.mock_safety.add_user_whitelist.assert_called_with("new_item")
+
+    def test_elevation_worker(self):
+        # 1. Success case
+        mock_proc_success = MagicMock()
+        mock_proc_success.stdout.readline.return_value = "CONFCLEAN_ELEVATED_READY\n"
+        with patch("subprocess.Popen", return_value=mock_proc_success):
+            worker = ElevationWorker(["pkexec", "env", "python3", "main.py"])
+            success_slot = MagicMock()
+            worker.elevation_succeeded.connect(success_slot)
+            worker.run()
+            success_slot.assert_called_once()
+
+        # 2. Cancelled case (code 126 or 127)
+        mock_proc_cancel = MagicMock()
+        mock_proc_cancel.stdout.readline.return_value = ""
+        mock_proc_cancel.wait.return_value = 126
+        mock_proc_cancel.returncode = 126
+        mock_proc_cancel.stderr.read.return_value = "Not authorized"
+        with patch("subprocess.Popen", return_value=mock_proc_cancel):
+            worker = ElevationWorker(["pkexec", "env", "python3", "main.py"])
+            failed_slot = MagicMock()
+            worker.elevation_failed.connect(failed_slot)
+            worker.run()
+            failed_slot.assert_called_once_with("cancelled")
+
+        # 3. Process failure case
+        mock_proc_fail = MagicMock()
+        mock_proc_fail.stdout.readline.return_value = ""
+        mock_proc_fail.wait.return_value = 1
+        mock_proc_fail.returncode = 1
+        mock_proc_fail.stderr.read.return_value = "Fatal error initializing display"
+        with patch("subprocess.Popen", return_value=mock_proc_fail):
+            worker = ElevationWorker(["pkexec", "env", "python3", "main.py"])
+            failed_slot = MagicMock()
+            worker.elevation_failed.connect(failed_slot)
+            worker.run()
+            failed_slot.assert_called_once_with("Fatal error initializing display")
+
+    @patch("shutil.which")
+    @patch("subprocess.run")
+    def test_settings_tab_elevation_logic(self, mock_subproc_run, mock_which):
+        from PyQt6.QtWidgets import QMessageBox
+
+        mock_which.return_value = "/usr/bin/pkexec"
+        tab = SettingsTab(self.mock_safety)
+        self.assertTrue(hasattr(tab, "btn_elevate"))
+
+        # User confirms question prompt
+        self.mock_quest.return_value = QMessageBox.StandardButton.Yes
+
+        with patch.object(ElevationWorker, "start") as mock_worker_start:
+            tab._relaunch_as_root()
+            mock_subproc_run.assert_called_once_with(
+                ["xhost", "+SI:localuser:root"], capture_output=True, timeout=2, check=False
+            )
+            self.assertFalse(tab.btn_elevate.isEnabled())
+            self.assertEqual(tab.btn_elevate.text(), "Waiting for authorization...")
+            mock_worker_start.assert_called_once()
+
+        # Test failure handler restores button
+        tab._on_elevation_failed("cancelled")
+        self.assertTrue(tab.btn_elevate.isEnabled())
+        self.assertIn("Relaunch as Root", tab.btn_elevate.text())
+
+        # Test success handler invokes QApplication.quit
+        with patch("PyQt6.QtWidgets.QApplication.quit") as mock_quit:
+            tab._on_elevation_succeeded()
+            mock_quit.assert_called_once()
 
     def test_dry_run_default_in_all_tabs(self):
         # 1. Scanner Tab

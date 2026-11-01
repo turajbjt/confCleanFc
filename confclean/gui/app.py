@@ -223,13 +223,24 @@ class MainWindow(QMainWindow):
         self.lbl_reclaimable.setText(f"Reclaimable: {len(orphans)} orphans ({size_mb:.1f} MB)")
 
 
-def run_gui():
+def run_gui(ready_signal: bool = False):
     """Starts the PyQt6 GUI application."""
     app = QApplication(sys.argv)
     app.setStyleSheet(ADWAITA_DARK_STYLE)
 
     window = MainWindow()
     window.show()
+
+    if ready_signal:
+        # Signal readiness to parent process waiting on pipe
+        try:
+            print("CONFCLEAN_ELEVATED_READY", flush=True)
+            # Redirect stdout/stderr to devnull so subsequent operations aren't bound to closed pipe
+            devnull = open(os.devnull, "w")
+            os.dup2(devnull.fileno(), sys.stdout.fileno())
+            os.dup2(devnull.fileno(), sys.stderr.fileno())
+        except Exception:
+            pass
 
     # Trigger scan upon initial load
     window.tab_scanner.start_scan()

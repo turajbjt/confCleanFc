@@ -5,8 +5,11 @@ Enables configuring custom whitelist entries, backup retention, and root elevati
 
 import os
 import sys
+import shutil
 import subprocess
+from PyQt6.QtCore import QThread, pyqtSignal
 from PyQt6.QtWidgets import (
+    QApplication,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -19,6 +22,43 @@ from PyQt6.QtWidgets import (
 )
 
 from confclean.core.safelist import SafetyEngine
+
+
+class ElevationWorker(QThread):
+    """Monitors asynchronous pkexec launch and waits for child GUI readiness handshake."""
+
+    elevation_failed = pyqtSignal(str)
+    elevation_succeeded = pyqtSignal()
+
+    def __init__(self, cmd, parent=None):
+        super().__init__(parent)
+        self.cmd = cmd
+
+    def run(self):
+        try:
+            proc = subprocess.Popen(
+                self.cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            # Read first line from stdout (blocks until child flushes CONFCLEAN_ELEVATED_READY or terminates)
+            line = proc.stdout.readline()
+            if "CONFCLEAN_ELEVATED_READY" in line:
+                self.elevation_succeeded.emit()
+                return
+
+            # Process exited or failed before displaying its GUI window
+            proc.wait()
+            stderr_out = proc.stderr.read().strip()
+            if proc.returncode in (126, 127) or "not authorized" in stderr_out.lower() or "dismissed" in stderr_out.lower():
+                self.elevation_failed.emit("cancelled")
+            elif stderr_out:
+                self.elevation_failed.emit(stderr_out)
+            else:
+                self.elevation_failed.emit(f"Process exited with code {proc.returncode}")
+        except Exception as e:
+            self.elevation_failed.emit(str(e))
 
 
 class SettingsTab(QWidget):
@@ -148,16 +188,76 @@ class SettingsTab(QWidget):
             QMessageBox.information(self, "Whitelist Updated", f"Removed '{text}' from custom whitelist.")
 
     def _relaunch_as_root(self):
+        if os.geteuid() == 0:
+            QMessageBox.information(
+                self,
+                "Already Elevated",
+                "ConfClean FC is already running with root / administrative privileges.",
+            )
+            return
+
+        pkexec_bin = shutil.which("pkexec")
+        if not pkexec_bin:
+            QMessageBox.critical(
+                self,
+                "Elevation Unavailable",
+                "The 'pkexec' utility was not found. Please install the polkit package to use privilege elevation.",
+            )
+            return
+
         reply = QMessageBox.question(
             self,
             "Elevate Privileges",
             "This will restart ConfClean FC as root via pkexec to enable system-wide cleaning.\n\nContinue?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
-        if reply == QMessageBox.StandardButton.Yes:
-            script_path = os.path.abspath(sys.argv[0])
-            try:
-                subprocess.Popen(["pkexec", "python3", script_path])
-                sys.exit(0)
-            except Exception as e:
-                QMessageBox.critical(self, "Elevation Failed", f"Could not launch via pkexec: {e}")
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        # Grant local root access to XWayland / X11 server
+        try:
+            subprocess.run(["xhost", "+SI:localuser:root"], capture_output=True, timeout=2, check=False)
+        except Exception:
+            pass
+
+        env_bin = shutil.which("env") or "/usr/bin/env"
+        env_vars = []
+        for var in ["DISPLAY", "XAUTHORITY"]:
+            val = os.environ.get(var)
+            if val:
+                env_vars.append(f"{var}={val}")
+
+        if not any(v.startswith("DISPLAY=") for v in env_vars):
+            env_vars.append("DISPLAY=:0")
+
+        # In Wayland, root cannot connect to user's wayland-0 socket.
+        # Force Qt to use XCB backend to connect to XWayland via DISPLAY.
+        env_vars.append("QT_QPA_PLATFORM=xcb")
+
+        script_path = os.path.abspath(sys.argv[0])
+        target_cmd = [sys.executable, script_path, "--gui", "--elevated-child"]
+        cmd = [pkexec_bin, env_bin] + env_vars + target_cmd
+
+        if hasattr(self, "btn_elevate"):
+            self.btn_elevate.setEnabled(False)
+            self.btn_elevate.setText("Waiting for authorization...")
+
+        self._elevation_worker = ElevationWorker(cmd, self)
+        self._elevation_worker.elevation_succeeded.connect(self._on_elevation_succeeded)
+        self._elevation_worker.elevation_failed.connect(self._on_elevation_failed)
+        self._elevation_worker.start()
+
+    def _on_elevation_succeeded(self):
+        QApplication.quit()
+
+    def _on_elevation_failed(self, error_msg: str):
+        if hasattr(self, "btn_elevate"):
+            self.btn_elevate.setEnabled(True)
+            self.btn_elevate.setText("🛡️ Relaunch as Root (Elevate via pkexec)")
+
+        if error_msg != "cancelled":
+            QMessageBox.critical(
+                self,
+                "Elevation Failed",
+                f"Could not launch elevated instance:\n\n{error_msg}",
+            )

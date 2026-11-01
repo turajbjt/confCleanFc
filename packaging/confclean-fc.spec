@@ -59,12 +59,19 @@ install -m 755 main.py %{buildroot}%{_datadir}/%{name}/main.py
 mkdir -p %{buildroot}%{_bindir}
 cat << 'EOF' > %{buildroot}%{_bindir}/confclean-fc
 #!/bin/bash
+if [ "$EUID" -eq 0 ] && [ -n "$DISPLAY" ] && [ -z "$QT_QPA_PLATFORM" ]; then
+    export QT_QPA_PLATFORM=xcb
+fi
 exec /usr/bin/python3 %{_datadir}/confclean-fc/main.py "$@"
 EOF
 chmod 755 %{buildroot}%{_bindir}/confclean-fc
 
 # Convenience symlink: confclean -> confclean-fc
 ln -sf confclean-fc %{buildroot}%{_bindir}/confclean
+
+# Install polkit policy for privilege escalation
+mkdir -p %{buildroot}%{_datadir}/polkit-1/actions
+install -m 644 packaging/io.github.confclean_fc.policy %{buildroot}%{_datadir}/polkit-1/actions/io.github.confclean_fc.policy
 
 # Install desktop entry
 mkdir -p %{buildroot}%{_datadir}/applications
@@ -117,6 +124,7 @@ fi
 %{_datadir}/%{name}
 %{_datadir}/applications/confclean-fc.desktop
 %{_datadir}/icons/hicolor/scalable/apps/confclean-fc.svg
+%{_datadir}/polkit-1/actions/io.github.confclean_fc.policy
 
 %changelog
 * Sun Nov 01 2026 James Turansky <turajb@plugnpay.com> - 1.1.0-1

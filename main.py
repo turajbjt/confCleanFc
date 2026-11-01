@@ -33,6 +33,7 @@ Examples:
     )
 
     parser.add_argument("--gui", action="store_true", help="Launch the graphical interface (default)")
+    parser.add_argument("--elevated-child", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--scan", action="store_true", help="Scan for orphaned settings and print summary")
     parser.add_argument("--clean", action="store_true", help="Clean detected orphan items (dry run by default unless --apply is passed)")
     parser.add_argument("--dry-run", action="store_true", default=False, help="Simulate without deleting files (ENABLED by default)")
@@ -58,6 +59,12 @@ Examples:
         # Check display server availability
         has_display = bool(os.environ.get("WAYLAND_DISPLAY") or os.environ.get("DISPLAY"))
         if not has_display:
+            if args.gui or args.elevated_child:
+                print(
+                    "Error: Graphical interface requested, but no WAYLAND_DISPLAY or DISPLAY environment variable was found.",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
             print("No Wayland or X11 display detected. Falling back to CLI mode...")
             from confclean.cli import run_cli
             args.scan = True
@@ -66,7 +73,7 @@ Examples:
 
         try:
             from confclean.gui.app import run_gui
-            run_gui()
+            run_gui(ready_signal=args.elevated_child)
         except ImportError as e:
             err_msg = (
                 "\n"

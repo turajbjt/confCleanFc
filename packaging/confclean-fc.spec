@@ -1,6 +1,6 @@
 Name:           confclean-fc
-Version:        1.0.0
-Release:        2%{?dist}
+Version:        1.1.0
+Release:        1%{?dist}
 Summary:        Fedora & RPM system cleaner and orphan configuration purger
 
 License:        GPL-3.0-or-later
@@ -120,10 +120,11 @@ fi
 %{_datadir}/icons/hicolor/scalable/apps/confclean-fc.svg
 
 %changelog
-* Sun Nov 01 2026 James Turansky <turajb@plugnpay.com> - 1.0.0-2
+* Sun Nov 01 2026 James Turansky <turajb@plugnpay.com> - 1.1.0-1
 - Add broken .desktop and autostart entry detection and safe cleaning
 - Add Flatpak unused runtime and Snap disabled revision pruning
 - Add built-in unified diff viewer for .rpmnew and .rpmsave files
+- Optimize privilege escalation to a single prompt per batch operation
 
 * Fri Oct 30 2026 James Turansky <turajb@plugnpay.com> - 1.0.0-1
 - Initial RPM release of ConfClean FC for Fedora and RPM distributions

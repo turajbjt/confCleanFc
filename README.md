@@ -29,6 +29,9 @@ Inspired by the philosophy of tools like OrphyCleaner, ConfClean FC goes substan
 | **Interactive Restore Tool (Selective / Full)** | **Yes** | No | No | No |
 | **Dry Run Simulation Mode** | **Yes (ON by Default)** | No | Partial | No |
 | **Orphan Config Detection (RPM + Flatpak + Desktop)** | **Yes** | Partial | No | No |
+| **Broken Desktop & Autostart Cleanup** | **Yes** | No | No | No |
+| **Built-in Unified RPM Diff Viewer (.rpmnew/.rpmsave)** | **Yes** | No | No | No |
+| **Multi-System Package Pruning (DNF + Flatpak + Snap)** | **Yes (Single Auth)** | No | No | Basic script |
 | **Safe Kernel Cleanup (Protects Running & Backup Kernels)** | **Yes** | No | No | Basic script |
 | **App Reset to Factory Fresh Defaults** | **Yes (With auto-backup)** | No | No | No |
 | **Comprehensive Audit Logging** | **Yes** | Minimal | Basic | No |
@@ -66,10 +69,10 @@ ConfClean FC requires **Python 3.9+** and **PyQt6** for its graphical interface:
 You can directly install the pre-built `.rpm` package using `dnf` or `rpm`:
 ```bash
 # Install locally with automatic dependency resolution:
-sudo dnf install ./confclean-fc-1.0.0-1.fc44.noarch.rpm
+sudo dnf install ./confclean-fc-1.1.0-1.fc44.noarch.rpm
 
 # Or with rpm:
-sudo rpm -ivh ./confclean-fc-1.0.0-1.fc44.noarch.rpm
+sudo rpm -ivh ./confclean-fc-1.1.0-1.fc44.noarch.rpm
 ```
 
 Once installed, launch ConfClean FC from your application menu or directly in terminal:
@@ -119,6 +122,9 @@ ConfClean FC also works seamlessly without a display. **Safety Note:** Deletion 
 
 # Query DNF for unneeded dependencies and old kernels
 ./main.py --packages
+
+# View syntax-highlighted unified diff for an RPM upgrade artifact (.rpmnew / .rpmsave)
+./main.py --diff /etc/cups/cupsd.conf.rpmnew
 
 # List all past backup archives
 ./main.py --restore list
@@ -236,15 +242,16 @@ Run the full automated test suite:
 python3 -m unittest discover -s tests
 ```
 
-### Test Coverage Highlights (101 Unit Tests):
+### Test Coverage Highlights (107 Unit Tests):
 * **`tests/test_safelist.py`** (7 tests): Core system patterns, root dirs, /etc files, security/credential protection (including parent directory paths like `~/.ssh/id_rsa`), developer toolchains, uninstalled orphan allowances, custom whitelist JSON persistence and error recovery.
 * **`tests/test_detector.py`** (9 tests): SystemDetector processes, exact and component Flatpak matching, Snap application detection, known application mappings, RPM direct and version/flavor suffix matching, binary PATH searches, desktop file parser, distinct fork handling (`cura-lulzbot` vs `cura`).
 * **`tests/test_scanner.py`** (12 tests): ScanItem size and date formatting, `get_path_stats` file/dir/symlink/missing, `_analyze_item` (safelist, rpmsave, rpmnew, active, orphan > 14 days, probable <= 14 days), broken `.desktop` and autostart entry detection, `.rpmnew` unified diff engine (`get_rpm_diff`), `scan_all` orchestration and progress callback.
 * **`tests/test_logger.py`** (7 tests): AuditLogger singleton behavior, file logging, listener dispatch, faulty listener resilience, `audit_event` formatting (B, KB, MB), `get_recent_logs` filtering and limits, 2000-record buffer overflow rotation.
 * **`tests/test_backup_restore.py`** (8 tests): BackupMetadata formatting, `create_backup` empty error and disk space check, full backup creation with `.tar.gz` and `manifest.json` and companion `.log`, `list_backups`, selective restore, destination override, overwrite vs skip conflict handling, symlink restoration, and backup deletion.
 * **`tests/test_cleaner.py`** (7 tests): CleanResult formatting, empty items, safelist enforcement, dry-run simulation, dry-run by default verification, backup failure aborts deletion, actual clean of files and dirs with progress reporting and audit logging.
+* **`tests/test_clean_safety.py`** (6 tests): Comprehensive safety checks ensuring system files, user home roots, and critical system paths are never targeted for deletion.
 * **`tests/test_cache_cleaner.py`** (7 tests): CacheCategory formatting, `scan_categories` on user and system data, `_evaluate_old_tmp_category` age filter, root requirement enforcement, directory emptying while preserving parent folders, DNF clean and journalctl vacuum commands, dry-run by default verification.
-* **`tests/test_package_manager.py`** (10 tests): PackageSuggestion NEVRA and size formatting, `removal_spec` for exact version targeting, `get_removal_command` root vs user (pkexec) and sudo fallback, `_get_old_kernels` sorting and running kernel protection, `_get_unneeded_packages`, `_get_duplicate_packages`, Flatpak unused runtimes query & graceful degradation when missing, Snap disabled revisions query & graceful degradation when missing, multi-system command chaining, progress reporting.
+* **`tests/test_package_manager.py`** (10 tests): PackageSuggestion NEVRA and size formatting, `removal_spec` for exact version targeting, `get_removal_command` root vs user (pkexec) and sudo fallback, `_get_old_kernels` sorting and running kernel protection, `_get_unneeded_packages`, `_get_duplicate_packages`, Flatpak unused runtimes query & graceful degradation when missing, Snap disabled revisions query & graceful degradation when missing, single-authentication privilege escalation batching, progress reporting.
 * **`tests/test_app_resetter.py`** (6 tests): AppResetProfile formatting, `discover_reset_profiles` for known apps and Flatpaks, safelist refusal, factory reset with pre-reset backup and path wiping, dry-run by default verification, empty path validation.
-* **`tests/test_cli.py`** (16 tests): `format_table` ASCII alignment, `--scan` output, `--dry-run` simulation, default dry-run on `--clean`, `--clean` with `--force`, user cancellation on prompt, `--cache` listing, cache clean dry-run by default, cache clean apply, `--packages` listing and removal command, `--restore list`, `--reset-app` dry run by default, `--reset-app` apply, `--diff` unified diff viewer.
-* **`tests/test_gui_headless.py`** (10 tests): All 6 asynchronous workers (`ScanWorker`, `CleanWorker`, `PackageScanWorker`, `CacheCleanWorker`, `AppResetWorker`, `RestoreWorker`), offscreen testing of `ScannerTab`, `CacheTab`, `PackageTab`, `AppResetTab`, `RestoreTab`, `LogsTab`, `SettingsTab`, `MainWindow` multi-tab navigation, and verification that Dry Run is checked by default across all tabs.
+* **`tests/test_cli.py`** (13 tests): `format_table` ASCII alignment, `--scan` output, `--dry-run` simulation, default dry-run on `--clean`, `--clean` with `--force`, user cancellation on prompt, `--cache` listing, cache clean dry-run by default, cache clean apply, `--packages` listing with DNF/Flatpak/Snap and batched removal commands, `--restore list`, `--reset-app` dry run & apply, `--diff` unified diff viewer.
+* **`tests/test_gui_headless.py`** (15 tests): All asynchronous workers (`ScanWorker`, `CleanWorker`, `PackageScanWorker`, `CacheCleanWorker`, `AppResetWorker`, `RestoreWorker`, `BackupListWorker`, `ArchiveInspectWorker`), offscreen testing of `ScannerTab` (including broken `.desktop` entry display and double-click diff viewer invocation), `RpmDiffDialog` (colorization and clipboard copy), `PackageTab` (Flatpak/Snap category badges and batched package removal), `CacheTab`, `AppResetTab`, `RestoreTab`, `LogsTab`, `SettingsTab`, `MainWindow` multi-tab navigation, and verification that Dry Run is checked by default across all tabs.

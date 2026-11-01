@@ -37,7 +37,7 @@ from confclean.gui.tab_cache import CacheTab
 from confclean.gui.tab_logs import LogsTab
 from confclean.gui.tab_packages import PackageTab
 from confclean.gui.tab_restore import RestoreTab
-from confclean.gui.tab_scanner import ScannerTab
+from confclean.gui.tab_scanner import RpmDiffDialog, ScannerTab
 from confclean.gui.tab_settings import SettingsTab
 from confclean.gui.workers import (
     AppResetWorker,
@@ -313,6 +313,128 @@ class TestGUIHeadless(unittest.TestCase):
         self.assertEqual(win.stack.currentIndex(), 1)
         win.sidebar.setCurrentRow(4)
         self.assertEqual(win.stack.currentIndex(), 4)
+
+    @patch("confclean.gui.tab_scanner.get_rpm_diff")
+    def test_rpm_diff_dialog(self, mock_diff):
+        mock_diff.return_value = (
+            "/etc/test.conf",
+            "/etc/test.conf.rpmnew",
+            "--- /etc/test.conf\n+++ /etc/test.conf.rpmnew\n@@ -1,1 +1,1 @@\n-old_line\n+new_line\n context_line",
+        )
+        dialog = RpmDiffDialog("/etc/test.conf.rpmnew")
+        self.assertIn("test.conf.rpmnew", dialog.windowTitle())
+        html = dialog.text_view.toHtml()
+        self.assertIn("old_line", html)
+        self.assertIn("new_line", html)
+
+        # Test clipboard copy
+        with patch.object(QApplication, "clipboard") as mock_clip:
+            mock_cb_instance = MagicMock()
+            mock_clip.return_value = mock_cb_instance
+            dialog._copy_diff("diff content")
+            mock_cb_instance.setText.assert_called_with("diff content")
+
+    @patch.object(ScannerTab, "_show_rpm_diff")
+    def test_scanner_tab_rpm_diff_double_click(self, mock_show_diff):
+        tab = ScannerTab(self.mock_scanner, self.mock_cleaner, self.mock_safety)
+        item_rpm = ScanItem(
+            "/etc/app.conf.rpmnew",
+            "app.conf.rpmnew",
+            "RPM Backup",
+            False,
+            100,
+            1,
+            10.0,
+            "CONFIRMED_ORPHAN",
+            "RPM new template",
+        )
+        item_normal = ScanItem(
+            "/home/u/.config/app",
+            "app",
+            "config",
+            True,
+            100,
+            1,
+            10.0,
+            "CONFIRMED_ORPHAN",
+            "Orphan",
+        )
+        tab.scanned_items = [item_rpm, item_normal]
+        tab._populate_tree()
+
+        tree_item_rpm = tab.tree.topLevelItem(0)
+        tree_item_normal = tab.tree.topLevelItem(1)
+
+        tab._on_item_double_clicked(tree_item_rpm, 0)
+        mock_show_diff.assert_called_once_with("/etc/app.conf.rpmnew")
+
+        mock_show_diff.reset_mock()
+        tab._on_item_double_clicked(tree_item_normal, 0)
+        mock_show_diff.assert_not_called()
+
+    def test_scanner_tab_broken_desktop_entry(self):
+        tab = ScannerTab(self.mock_scanner, self.mock_cleaner, self.mock_safety)
+        item_desktop = ScanItem(
+            "/home/user/.local/share/applications/deleted-app.desktop",
+            "deleted-app.desktop",
+            "Broken Desktop",
+            False,
+            250,
+            1,
+            10.0,
+            "CONFIRMED_ORPHAN",
+            "Target executable /usr/bin/deleted-app no longer exists",
+        )
+        tab.scanned_items = [item_desktop]
+        tab._populate_tree()
+
+        self.assertEqual(tab.tree.topLevelItemCount(), 1)
+        tree_item = tab.tree.topLevelItem(0)
+        self.assertEqual(tree_item.text(1), "deleted-app.desktop")
+        self.assertEqual(tree_item.text(2), "🔴 Orphan")
+        self.assertEqual(tree_item.text(3), "Broken Desktop")
+
+    def test_package_tab_flatpak_snap_and_batch_removal(self):
+        s_flatpak = PackageSuggestion(
+            name="org.gnome.Platform//45",
+            version="45",
+            release="",
+            arch="x86_64",
+            size_bytes=500 * 1024 * 1024,
+            summary="Unused runtime",
+            category="flatpak_unused",
+            reason="Unused runtime",
+            is_protected=False,
+            is_selected=True,
+        )
+        s_snap = PackageSuggestion(
+            name="core20 (rev 1822)",
+            version="rev 1822",
+            release="",
+            arch="",
+            size_bytes=60 * 1024 * 1024,
+            summary="Disabled revision",
+            category="snap_unused",
+            reason="Disabled revision",
+            is_protected=False,
+            is_selected=True,
+        )
+        tab = PackageTab(self.mock_pkg)
+        tab.suggestions = [s_flatpak, s_snap]
+        tab._populate_table()
+
+        self.assertEqual(tab.table.rowCount(), 2)
+        self.assertEqual(tab.table.item(0, 4).text(), "Flatpak Runtime")
+        self.assertEqual(tab.table.item(1, 4).text(), "Snap Revision")
+
+        # Test batch removal call
+        from PyQt6.QtWidgets import QMessageBox
+        self.mock_quest.return_value = QMessageBox.StandardButton.Yes
+        self.mock_pkg.get_removal_command.return_value = ["flatpak", "uninstall", "--unused", "-y"]
+        with patch("subprocess.Popen") as mock_popen:
+            tab._remove_selected_packages()
+            self.mock_pkg.get_removal_command.assert_called_once_with([s_flatpak, s_snap])
+            mock_popen.assert_called_once()
 
 
 if __name__ == "__main__":

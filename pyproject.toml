@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "confclean-fc"
-version = "1.0.0"
+version = "1.1.0"
 description = "Fedora & RPM system cleaner and orphan configuration purger"
 readme = "README.md"
 requires-python = ">=3.9"

@@ -69,7 +69,14 @@ The scanner traverses standard XDG base directory specifications and system conf
 * `~/.config/` (User application configurations)
 * `~/.local/share/` (User application runtime data)
 * `~/.var/app/` (Sandboxed Flatpak application settings)
+* `~/.local/share/applications/` and `~/.config/autostart/` (Broken desktop launchers and autostart entries whose target executables no longer exist)
 * `/etc/*.rpmsave` and `/etc/*.rpmnew` (System configuration backups left behind after RPM package removals or updates)
+
+#### Broken Desktop & Autostart Detection:
+The scanner inspects user-level `.desktop` entries in application menus and autostart directories. By parsing the `Exec=` key and resolving binary locations against `PATH`, any launcher referencing missing executables is flagged with category `"Broken Desktop"` and status `CONFIRMED_ORPHAN`.
+
+#### Built-in RPM Diff Engine (`get_rpm_diff` & `RpmDiffDialog`):
+For `.rpmnew` and `.rpmsave` files, ConfClean FC provides a unified diff engine comparing the template against the live `/etc` configuration file. In the GUI, double-clicking any RPM upgrade candidate opens an interactive diff viewer dialog (`RpmDiffDialog`) featuring syntax-highlighted diff hunks (additions, deletions, line numbers) and one-click clipboard copying.
 
 #### Item Classification State Machine:
 ```mermaid
@@ -132,11 +139,14 @@ The **Restore Engine** supports:
 * **Selective Item Restoration**: Restores only selected items matching an item ID.
 * **Conflict Management**: User can choose between skipping existing files or overwriting them with the backed-up version.
 
-### 5. Safe Kernel & Package Optimization (`confclean.core.package_manager.PackageManager`)
+### 5. Multi-System Package Optimization (`confclean.core.package_manager.PackageManager`)
 * **Running Kernel Safeguard**: Evaluates `uname -r` and flags the currently active booted kernel as **PROTECTED**.
 * **Fallback Kernel Safeguard**: Identifies the newest installed kernel alternative (e.g. `kernel-core-6.x`) and flags it as **PROTECTED** to ensure the user always has a bootable fallback.
 * **Redundant Old Kernels**: Older redundant kernels (3rd or older) are classified as cleanable candidates.
 * **DNF Unneeded Dependencies**: Queries `dnf repoquery --unneeded` or `dnf autoremove` candidates, cross-checks against protected system libraries, and outputs safe removal commands.
+* **Flatpak Unused Runtime Pruning**: Automatically detects unreferenced runtimes (`flatpak list --runtime --unused`) and suggests cleanup via `flatpak uninstall --unused -y`. Degrades gracefully if Flatpak is not installed.
+* **Snap Disabled Revision Pruning**: Queries old disabled Snap revisions (`snap list --all`) and schedules pruning of non-active revisions. Degrades gracefully if Snap is not installed.
+* **Single-Authentication Privilege Batching**: When multiple packages require root privileges across DNF and Snap, `get_removal_command` coalesces commands into a single compound execution (e.g., `pkexec bash -c "cmd1 && cmd2"`) so the user enters their administrator password only once per batch operation.
 
 ### 6. Application Factory Resetter (`confclean.core.app_resetter.AppResetter`)
 Allows wiping accumulated caches, broken preferences, and local cookies to return applications (e.g., Firefox, Chrome, VS Code, LibreOffice, GIMP, VLC, Flatpaks) to fresh-install defaults.

@@ -39,7 +39,8 @@ When run without flags in a graphical desktop session (Wayland or X11), ConfClea
 | Flag | Description |
 | :--- | :--- |
 | `--cache` | Scan cleanable application caches, thumbnails, trash, and system temporary files. When combined with `--clean`, purges them. |
-| `--packages` | Scan DNF and RPM database for unneeded dependencies and old kernels. |
+| `--packages` | Scan DNF, RPM, Flatpak, and Snap for unneeded dependencies, redundant kernels, unused runtimes, and disabled revisions. |
+| `--diff <FILE>` | View a syntax-highlighted unified diff between an RPM template (`.rpmnew` or `.rpmsave`) and its active configuration file. |
 | `--restore [ID]` | List available backup archives (if no ID specified) or restore files from a specific backup ID or path. |
 | `--reset-app <APP>` | Reset an application's settings to factory defaults with automatic backup (**Dry run by default** unless `--apply`). |
 | `-h`, `--help` | Display command usage and examples. |
@@ -131,6 +132,12 @@ Simulate resetting Firefox preferences and caches:
 Commit the factory reset (creates a pre-reset backup before wiping):
 ```bash
 ./main.py --reset-app firefox --apply
+```
+
+### 9. View Configuration Diff (.rpmnew / .rpmsave)
+Compare an incoming RPM upgrade template against the existing live configuration file:
+```bash
+./main.py --diff /etc/cups/cupsd.conf.rpmnew
 ```
 
 ---

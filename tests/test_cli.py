@@ -322,6 +322,62 @@ class TestCLI(unittest.TestCase):
         self.assertIn("unused-lib", output)
         self.assertIn("Suggested Removal Command", output)
 
+    @patch("confclean.core.package_manager.PackageManager.scan_all_suggestions")
+    def test_cli_packages_flatpak_and_snap(self, mock_pkg_scan):
+        s1 = PackageSuggestion(
+            name="org.gnome.Platform//45",
+            version="45",
+            release="",
+            arch="x86_64",
+            size_bytes=500 * 1024 * 1024,
+            summary="Unused runtime",
+            category="flatpak_unused",
+            reason="Unused runtime",
+            is_protected=False,
+            is_selected=True,
+        )
+        s2 = PackageSuggestion(
+            name="core20 (rev 1822)",
+            version="rev 1822",
+            release="",
+            arch="",
+            size_bytes=60 * 1024 * 1024,
+            summary="Disabled revision",
+            category="snap_unused",
+            reason="Disabled revision",
+            is_protected=False,
+            is_selected=True,
+        )
+        mock_pkg_scan.return_value = [s1, s2]
+
+        args = argparse.Namespace(
+            scan=False,
+            clean=False,
+            dry_run=False,
+            cache=False,
+            packages=True,
+            restore=None,
+            reset_app=None,
+            force=False,
+            no_backup=False,
+        )
+
+        with patch("sys.stdout", new_callable=io.StringIO) as mock_stdout:
+            run_cli(
+                args,
+                scanner=self.mock_scanner,
+                cleaner=self.mock_cleaner,
+                safety=self.mock_safety,
+                backup_mgr=self.mock_backup_mgr,
+            )
+            output = mock_stdout.getvalue()
+
+        self.assertIn("org.gnome.Platform//45", output)
+        self.assertIn("core20 (rev 1822)", output)
+        self.assertIn("flatpak_unused", output)
+        self.assertIn("snap_unused", output)
+        self.assertIn("Suggested Removal Command", output)
+
     def test_cli_restore_list(self):
         b = BackupMetadata(
             backup_id="backup_123",

@@ -6,7 +6,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 PKG_NAME="confclean-fc"
-PKG_VERSION="1.0.0"
+PKG_VERSION="1.1.0"
 DIST_DIR="${ROOT_DIR}/dist"
 RPMBUILD_DIR="${ROOT_DIR}/rpmbuild"
 
@@ -15,6 +15,7 @@ if command -v rpmbuild >/dev/null 2>&1; then
     RPMBUILD_BIN="$(command -v rpmbuild)"
 elif [ -x "/tmp/rpmbuild_tool/usr/bin/rpmbuild" ]; then
     RPMBUILD_BIN="/tmp/rpmbuild_tool/usr/bin/rpmbuild"
+    export LD_LIBRARY_PATH="/tmp/rpmbuild_tool/usr/lib64:${LD_LIBRARY_PATH}"
 else
     echo "Error: rpmbuild binary not found. Please install rpm-build (sudo dnf install rpm-build)." >&2
     exit 1

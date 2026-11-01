@@ -21,6 +21,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from confclean import __version__
 from confclean.core.app_resetter import AppResetter
 from confclean.core.backup_manager import BackupManager
 from confclean.core.cache_cleaner import CacheCleaner
@@ -109,7 +110,7 @@ class MainWindow(QMainWindow):
         title_lbl.setObjectName("app_title")
         h_layout.addWidget(title_lbl)
 
-        version_badge = QLabel("v1.0.0 (Fedora)")
+        version_badge = QLabel(f"v{__version__} (Fedora)")
         version_badge.setStyleSheet("color: #787878; font-size: 11px; margin-left: 4px;")
         h_layout.addWidget(version_badge)
 

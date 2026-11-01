@@ -180,7 +180,7 @@ class ScannerTab(QWidget):
 
         header = self.tree.header()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
@@ -347,6 +347,7 @@ class ScannerTab(QWidget):
             self.tree.addTopLevelItem(tree_item)
 
         self.tree.blockSignals(False)
+        self.tree.resizeColumnToContents(1)
         self._apply_filters()
         self._update_selected_stats()
 

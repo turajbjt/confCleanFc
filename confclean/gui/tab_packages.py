@@ -74,7 +74,7 @@ class PackageTab(QWidget):
 
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
@@ -210,6 +210,7 @@ class PackageTab(QWidget):
 
         size_mb = total_removable_bytes / (1024 * 1024)
         self.lbl_summary.setText(f"Found {len(self.suggestions)} packages ({size_mb:.2f} MB removable).")
+        self.table.resizeColumnToContents(1)
 
     def _remove_selected_packages(self):
         selected_pkgs: List[PackageSuggestion] = []

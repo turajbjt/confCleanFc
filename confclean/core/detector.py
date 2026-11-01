@@ -7,6 +7,7 @@ import os
 import sys
 import glob
 import re
+import shutil
 import subprocess
 from typing import Dict, List, Optional, Set, Tuple
 
@@ -53,6 +54,7 @@ class SystemDetector:
     def __init__(self, refresh_on_init: bool = True):
         self.rpm_packages: Set[str] = set()
         self.flatpak_apps: Set[str] = set()
+        self.snap_apps: Set[str] = set()
         self.binaries: Set[str] = set()
         self.desktop_files: Dict[str, Dict[str, str]] = {}
         self.desktop_execs: Set[str] = set()
@@ -67,6 +69,7 @@ class SystemDetector:
         """Refreshes all detection caches."""
         self._load_rpm_packages()
         self._load_flatpak_apps()
+        self._load_snap_apps()
         self._load_binaries()
         self._load_desktop_files()
         self._load_running_processes()
@@ -121,6 +124,27 @@ class SystemDetector:
                     appid = line.strip()
                     if appid and appid.lower() != "application id":
                         self.flatpak_apps.add(appid.lower())
+        except Exception:
+            pass
+
+    def _load_snap_apps(self):
+        """Loads installed Snap package names gracefully."""
+        self.snap_apps.clear()
+        if not shutil.which("snap"):
+            return
+        try:
+            res = subprocess.run(
+                ["snap", "list"],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=5,
+            )
+            if res.returncode == 0:
+                for line in res.stdout.splitlines()[1:]:
+                    parts = line.split()
+                    if parts:
+                        self.snap_apps.add(parts[0].lower())
         except Exception:
             pass
 
@@ -216,7 +240,7 @@ class SystemDetector:
         if clean_name in self.running_processes:
             return True, clean_name, "process", f"Active process running: {clean_name}"
 
-        # 2. Check installed Flatpaks
+        # 2. Check installed Flatpaks and Snaps
         for flatpak_id in self.flatpak_apps:
             if lower_name == flatpak_id or clean_name == flatpak_id:
                 return True, flatpak_id, "flatpak", f"Installed Flatpak: {flatpak_id}"
@@ -224,6 +248,9 @@ class SystemDetector:
             id_parts = flatpak_id.split(".")
             if any(clean_name == part.lower() for part in id_parts) or clean_name in flatpak_id:
                 return True, flatpak_id, "flatpak", f"Matches Flatpak component: {flatpak_id}"
+
+        if clean_name in self.snap_apps or lower_name in self.snap_apps:
+            return True, clean_name, "snap", f"Installed Snap package: {clean_name}"
 
         # 3. Check known mappings
         if lower_name in self.COMMON_APP_MAPPINGS or clean_name in self.COMMON_APP_MAPPINGS:

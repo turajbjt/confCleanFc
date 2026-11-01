@@ -10,8 +10,10 @@ from typing import List, Optional
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QAction, QColor, QFont, QIcon
 from PyQt6.QtWidgets import (
+    QApplication,
     QCheckBox,
     QComboBox,
+    QDialog,
     QFrame,
     QHBoxLayout,
     QHeaderView,
@@ -21,6 +23,7 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QPushButton,
+    QTextEdit,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
@@ -29,8 +32,93 @@ from PyQt6.QtWidgets import (
 
 from confclean.core.cleaner import SafeCleaner
 from confclean.core.safelist import SafetyEngine
-from confclean.core.scanner import ConfigScanner, ScanItem
+from confclean.core.scanner import ConfigScanner, ScanItem, get_rpm_diff
 from confclean.gui.workers import CleanWorker, ScanWorker
+
+
+class RpmDiffDialog(QDialog):
+    """Dialog displaying a syntax-highlighted unified diff between active and RPM config files."""
+
+    def __init__(self, rpm_path: str, parent=None):
+        super().__init__(parent)
+        self.rpm_path = rpm_path
+        self.setWindowTitle(f"Configuration Diff — {os.path.basename(rpm_path)}")
+        self.resize(850, 550)
+        self.setMinimumSize(600, 400)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
+
+        # Compute diff
+        active_path, rpm_path_out, diff_text = get_rpm_diff(rpm_path)
+
+        # Header info card
+        header_card = QFrame()
+        header_card.setProperty("class", "card")
+        h_layout = QVBoxLayout(header_card)
+        h_layout.setContentsMargins(12, 10, 12, 10)
+        h_layout.setSpacing(4)
+
+        title_lbl = QLabel("<b>Unified Diff Comparison</b>")
+        title_lbl.setStyleSheet("font-size: 14px; color: #79c0ff;")
+        h_layout.addWidget(title_lbl)
+
+        p1_lbl = QLabel(f"<b>Active Config:</b> <code>{active_path or 'Not Found'}</code>")
+        p1_lbl.setStyleSheet("color: #e0e0e0; font-size: 12px;")
+        h_layout.addWidget(p1_lbl)
+
+        p2_lbl = QLabel(f"<b>RPM Template:</b> <code>{rpm_path}</code>")
+        p2_lbl.setStyleSheet("color: #e0e0e0; font-size: 12px;")
+        h_layout.addWidget(p2_lbl)
+
+        layout.addWidget(header_card)
+
+        # Monospace Text Viewer with diff coloring
+        self.text_view = QTextEdit()
+        self.text_view.setReadOnly(True)
+        self.text_view.setFont(QFont("Monospace", 10))
+        self._set_colored_diff(diff_text)
+        layout.addWidget(self.text_view, stretch=1)
+
+        # Bottom Buttons
+        btn_layout = QHBoxLayout()
+        btn_copy = QPushButton("📋 Copy Diff")
+        btn_copy.clicked.connect(lambda: self._copy_diff(diff_text))
+        btn_layout.addWidget(btn_copy)
+
+        btn_layout.addStretch()
+
+        btn_close = QPushButton("Close")
+        btn_close.setProperty("class", "primary")
+        btn_close.clicked.connect(self.accept)
+        btn_layout.addWidget(btn_close)
+
+        layout.addLayout(btn_layout)
+
+    def _copy_diff(self, text: str):
+        clipboard = QApplication.clipboard()
+        if clipboard:
+            clipboard.setText(text)
+            QMessageBox.information(self, "Copied", "Diff copied to clipboard.")
+
+    def _set_colored_diff(self, diff_text: str):
+        import html
+        html_lines = []
+        for line in diff_text.splitlines():
+            escaped = html.escape(line)
+            if line.startswith("+++") or line.startswith("---"):
+                html_lines.append(f"<span style='color: #8b949e; font-weight: bold;'>{escaped}</span>")
+            elif line.startswith("@@"):
+                html_lines.append(f"<span style='color: #d2a8ff; font-weight: bold;'>{escaped}</span>")
+            elif line.startswith("+"):
+                html_lines.append(f"<span style='color: #7ee787; background-color: #0d2818;'>{escaped}</span>")
+            elif line.startswith("-"):
+                html_lines.append(f"<span style='color: #ff7b72; background-color: #3b1219;'>{escaped}</span>")
+            else:
+                html_lines.append(f"<span style='color: #c9d1d9;'>{escaped}</span>")
+
+        self.text_view.setHtml("<pre style='margin: 0; line-height: 1.4;'>" + "<br>".join(html_lines) + "</pre>")
 
 
 class ScannerTab(QWidget):
@@ -87,6 +175,7 @@ class ScannerTab(QWidget):
         self.tree.setAlternatingRowColors(True)
         self.tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.tree.customContextMenuRequested.connect(self._show_context_menu)
+        self.tree.itemDoubleClicked.connect(self._on_item_double_clicked)
         self.tree.itemChanged.connect(self._on_item_checked)
 
         header = self.tree.header()
@@ -375,6 +464,13 @@ class ScannerTab(QWidget):
 
         menu = QMenu(self)
 
+        # Diff viewer for RPM upgrade artifacts (.rpmnew / .rpmsave)
+        if scan_item.path.endswith(".rpmnew") or scan_item.path.endswith(".rpmsave"):
+            act_diff = QAction("🔍 View Diff with Active Config", self)
+            act_diff.triggered.connect(lambda: self._show_rpm_diff(scan_item.path))
+            menu.addAction(act_diff)
+            menu.addSeparator()
+
         act_open = QAction("📂 Open in File Manager", self)
         act_open.triggered.connect(lambda: self._open_in_file_manager(scan_item.path))
         menu.addAction(act_open)
@@ -390,6 +486,15 @@ class ScannerTab(QWidget):
         menu.addAction(act_whitelist)
 
         menu.exec(self.tree.viewport().mapToGlobal(pos))
+
+    def _on_item_double_clicked(self, item, column):
+        scan_item: ScanItem = item.data(0, Qt.ItemDataRole.UserRole)
+        if scan_item and (scan_item.path.endswith(".rpmnew") or scan_item.path.endswith(".rpmsave")):
+            self._show_rpm_diff(scan_item.path)
+
+    def _show_rpm_diff(self, path: str):
+        dialog = RpmDiffDialog(path, parent=self)
+        dialog.exec()
 
     def _open_in_file_manager(self, path: str):
         target = path if os.path.isdir(path) else os.path.dirname(path)

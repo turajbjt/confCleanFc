@@ -6,6 +6,7 @@ and repository orphans on Fedora, Rocky, CentOS, and RHEL.
 
 import os
 import re
+import shlex
 import shutil
 import subprocess
 from typing import Callable, Dict, List, Optional, Tuple
@@ -42,7 +43,27 @@ class PackageSuggestion:
 
     @property
     def full_nevra(self) -> str:
-        return f"{self.name}-{self.version}-{self.release}.{self.arch}"
+        if self.release and self.arch:
+            return f"{self.name}-{self.version}-{self.release}.{self.arch}"
+        elif self.release:
+            return f"{self.name}-{self.version}-{self.release}"
+        return f"{self.name}-{self.version}"
+
+    @property
+    def removal_spec(self) -> str:
+        """Returns the specific package specifier for dnf/rpm/flatpak/snap removal."""
+        if self.category == "snap_unused":
+            return f"{self.name} --revision={self.release}" if self.release else self.name
+        elif self.category == "flatpak_unused":
+            return self.name
+        elif self.category in ("old_kernel", "duplicate"):
+            if self.release and self.arch:
+                return f"{self.name}-{self.version}-{self.release}.{self.arch}"
+            elif self.release:
+                return f"{self.name}-{self.version}-{self.release}"
+            elif self.version and self.version not in ("installed", "duplicate"):
+                return f"{self.name}-{self.version}"
+        return self.name
 
     @property
     def formatted_size(self) -> str:
@@ -73,22 +94,32 @@ class PackageManager:
         suggestions: List[PackageSuggestion] = []
 
         if progress_callback:
-            progress_callback("Scanning for unneeded dependencies...", 1, 4)
+            progress_callback("Scanning for unneeded dependencies...", 1, 6)
         unneeded = self._get_unneeded_packages()
         suggestions.extend(unneeded)
 
         if progress_callback:
-            progress_callback("Scanning for old kernel packages...", 2, 4)
+            progress_callback("Scanning for old kernel packages...", 2, 6)
         old_kernels = self._get_old_kernels()
         suggestions.extend(old_kernels)
 
         if progress_callback:
-            progress_callback("Scanning for duplicate package versions...", 3, 4)
+            progress_callback("Scanning for duplicate package versions...", 3, 6)
         duplicates = self._get_duplicate_packages()
         suggestions.extend(duplicates)
 
         if progress_callback:
-            progress_callback("Scanning complete.", 4, 4)
+            progress_callback("Scanning for unused Flatpak runtimes...", 4, 6)
+        flatpaks = self._get_unused_flatpaks()
+        suggestions.extend(flatpaks)
+
+        if progress_callback:
+            progress_callback("Scanning for disabled Snap revisions...", 5, 6)
+        snaps = self._get_unused_snaps()
+        suggestions.extend(snaps)
+
+        if progress_callback:
+            progress_callback("Scanning complete.", 6, 6)
 
         return suggestions
 
@@ -102,17 +133,27 @@ class PackageManager:
                 name = h["name"]
                 if not name:
                     continue
-                nevra = f"{name}-{h['version']}-{h['release']}.{h['arch']}"
-                pkg_map[name.lower()] = {
+                version = h["version"]
+                release = h["release"]
+                arch = h["arch"]
+                epoch = str(h["epoch"]) if h["epoch"] is not None else "0"
+                nevra = f"{name}-{version}-{release}.{arch}"
+                envra = f"{name}-{epoch}:{version}-{release}.{arch}"
+                nvr = f"{name}-{version}-{release}"
+                info = {
                     "name": name,
-                    "version": h["version"],
-                    "release": h["release"],
-                    "arch": h["arch"],
+                    "version": version,
+                    "release": release,
+                    "arch": arch,
                     "size": h["size"] or 0,
                     "summary": h["summary"] or "",
                     "nevra": nevra,
                 }
-                pkg_map[nevra.lower()] = pkg_map[name.lower()]
+                pkg_map[nevra.lower()] = info
+                pkg_map[envra.lower()] = info
+                pkg_map[nvr.lower()] = info
+                if name.lower() not in pkg_map:
+                    pkg_map[name.lower()] = info
         except Exception as e:
             self.logger.warning(f"Could not read RPM database via python-rpm: {e}")
         return pkg_map
@@ -212,25 +253,34 @@ class PackageManager:
                     if not raw:
                         continue
 
-                    # Extract version-release
-                    # Match pattern like: kernel-...-0:7.2.13-200.fc44.x86_64
-                    m = re.search(r":?([0-9]+\.[0-9]+\.[0-9]+-[0-9]+[a-zA-Z0-9\._]+)", raw)
-                    vr = m.group(1) if m else raw
+                    # Normalize epoch e.g. kernel-core-0:7.2.13-200.fc44.x86_64 -> kernel-core-7.2.13-200.fc44.x86_64
+                    clean = re.sub(r"-(\d+):", "-", raw)
 
-                    info = pkg_map.get(raw.lower())
+                    info = pkg_map.get(raw.lower()) or pkg_map.get(clean.lower())
                     if not info:
-                        # Extract package name
-                        pname = raw.split("-0:")[0]
+                        # Extract name, version, release, arch from NEVRA: name-version-release.arch
+                        m_pkg = re.match(r"^(.+?)-([0-9][^-]*)-([0-9].*)\.([^.]+)$", clean)
+                        if m_pkg:
+                            pname, pver, prel, parch = m_pkg.groups()
+                        else:
+                            m_vr = re.search(r":?([0-9]+\.[0-9]+\.[0-9]+-[0-9]+[a-zA-Z0-9\._]+)", raw)
+                            vr_fallback = m_vr.group(1) if m_vr else raw
+                            pname = raw.split("-0:")[0].split(":")[0]
+                            pver = vr_fallback
+                            prel = ""
+                            parch = "x86_64"
+
                         info = {
                             "name": pname,
-                            "version": vr,
-                            "release": "",
-                            "arch": "x86_64",
+                            "version": pver,
+                            "release": prel,
+                            "arch": parch,
                             "size": 0,
                             "summary": "Kernel package",
-                            "nevra": raw,
+                            "nevra": clean,
                         }
 
+                    vr = f"{info['version']}-{info['release']}" if info.get("release") else info["version"]
                     if vr not in kernel_versions:
                         kernel_versions[vr] = []
                     kernel_versions[vr].append(info)
@@ -331,7 +381,8 @@ class PackageManager:
                     raw = line.strip()
                     if not raw:
                         continue
-                    info = pkg_map.get(raw.lower())
+                    clean = re.sub(r"-(\d+):", "-", raw)
+                    info = pkg_map.get(raw.lower()) or pkg_map.get(clean.lower())
                     if info:
                         results.append(
                             PackageSuggestion(
@@ -348,13 +399,20 @@ class PackageManager:
                             )
                         )
                     else:
-                        base_name = re.split(r"-\d", raw.split("-0:")[0])[0]
+                        m_pkg = re.match(r"^(.+?)-([0-9][^-]*)-([0-9].*)\.([^.]+)$", clean)
+                        if m_pkg:
+                            pname, pver, prel, parch = m_pkg.groups()
+                        else:
+                            pname = re.split(r"-\d", raw.split("-0:")[0])[0]
+                            pver = "duplicate"
+                            prel = ""
+                            parch = "x86_64"
                         results.append(
                             PackageSuggestion(
-                                name=base_name,
-                                version="duplicate",
-                                release="",
-                                arch="x86_64",
+                                name=pname,
+                                version=pver,
+                                release=prel,
+                                arch=parch,
                                 size_bytes=0,
                                 summary="Duplicate package version",
                                 category="duplicate",
@@ -368,10 +426,162 @@ class PackageManager:
 
         return results
 
-    def get_removal_command(self, packages: List[PackageSuggestion]) -> List[str]:
-        """Returns the CLI command string to remove the selected packages."""
-        pkg_names = [p.name for p in packages if not p.is_protected and p.is_selected]
-        if not pkg_names:
+    def _get_unused_flatpaks(self) -> List[PackageSuggestion]:
+        """Queries flatpak uninstall --unused for unreferenced runtimes gracefully."""
+        results: List[PackageSuggestion] = []
+        flatpak_bin = shutil.which("flatpak")
+        if not flatpak_bin:
+            return results
+
+        try:
+            res = subprocess.run(
+                [flatpak_bin, "uninstall", "--unused"],
+                input="n\n",
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=15,
+            )
+            if res.stdout:
+                for line in res.stdout.splitlines():
+                    line_s = line.strip()
+                    if not line_s or "Nothing unused" in line_s or line_s.startswith("ID") or "Proceed with" in line_s:
+                        continue
+                    parts = line_s.split()
+                    if parts and parts[0].endswith("."):
+                        parts = parts[1:]
+                    if len(parts) >= 2:
+                        ref_id = parts[0]
+                        branch = parts[1]
+                        if "." in ref_id and not ref_id.startswith("["):
+                            results.append(
+                                PackageSuggestion(
+                                    name=ref_id,
+                                    version=branch,
+                                    release="",
+                                    arch="",
+                                    size_bytes=0,
+                                    summary="Unused Flatpak runtime",
+                                    category="flatpak_unused",
+                                    reason="Unused Flatpak runtime left over after application removal",
+                                    is_protected=False,
+                                    is_selected=True,
+                                )
+                            )
+        except Exception as e:
+            self.logger.warning(f"Error querying unused Flatpak runtimes: {e}")
+
+        return results
+
+    def _get_unused_snaps(self) -> List[PackageSuggestion]:
+        """Queries snap list --all for disabled revisions and unused runtimes gracefully."""
+        results: List[PackageSuggestion] = []
+        snap_bin = shutil.which("snap")
+        if not snap_bin:
+            return results
+
+        try:
+            res = subprocess.run(
+                [snap_bin, "list", "--all"],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=15,
+            )
+            if res.returncode == 0 and res.stdout.strip():
+                lines = res.stdout.splitlines()
+                for line in lines[1:]:
+                    parts = line.split()
+                    if len(parts) >= 6:
+                        name = parts[0]
+                        version = parts[1]
+                        rev = parts[2]
+                        notes = parts[-1]
+                        if "disabled" in notes:
+                            snap_path = f"/var/lib/snapd/snaps/{name}_{rev}.snap"
+                            size = 0
+                            try:
+                                if os.path.isfile(snap_path):
+                                    size = os.path.getsize(snap_path)
+                            except OSError:
+                                size = 0
+
+                            results.append(
+                                PackageSuggestion(
+                                    name=name,
+                                    version=version,
+                                    release=rev,
+                                    arch="",
+                                    size_bytes=size,
+                                    summary=f"Disabled Snap revision ({notes})",
+                                    category="snap_unused",
+                                    reason=f"Disabled Snap revision {rev} superseded by newer revision",
+                                    is_protected=False,
+                                    is_selected=True,
+                                )
+                            )
+        except Exception as e:
+            self.logger.warning(f"Error querying disabled Snap revisions: {e}")
+
+        return results
+
+    def get_removal_commands(self, packages: List[PackageSuggestion]) -> List[List[str]]:
+        """Returns the list of individual raw CLI commands to remove selected packages/runtimes."""
+        active_pkgs = [p for p in packages if not p.is_protected and p.is_selected]
+        if not active_pkgs:
             return []
-        prefix = ["pkexec", self.dnf_bin] if not self.is_root else [self.dnf_bin]
-        return prefix + ["remove", "-y"] + pkg_names
+
+        commands: List[List[str]] = []
+
+        # 1. RPM/DNF Packages
+        dnf_targets = [p.removal_spec for p in active_pkgs if p.category in ("unneeded_dep", "old_kernel", "duplicate")]
+        if dnf_targets:
+            commands.append([self.dnf_bin, "remove", "-y"] + dnf_targets)
+
+        # 2. Flatpak Unused Runtimes
+        flatpak_pkgs = [p for p in active_pkgs if p.category == "flatpak_unused"]
+        if flatpak_pkgs and shutil.which("flatpak"):
+            commands.append(["flatpak", "uninstall", "--unused", "-y"])
+
+        # 3. Snap Disabled Revisions
+        snap_pkgs = [p for p in active_pkgs if p.category == "snap_unused"]
+        if snap_pkgs and shutil.which("snap"):
+            for sp in snap_pkgs:
+                if sp.release:
+                    commands.append(["snap", "remove", sp.name, f"--revision={sp.release}"])
+                else:
+                    commands.append(["snap", "remove", sp.name])
+
+        return commands
+
+    def get_removal_command(self, packages: List[PackageSuggestion]) -> List[str]:
+        """
+        Returns a single unified CLI command to execute all removals.
+        Elevates privileges ONCE for the entire batch via pkexec or sudo,
+        preventing repeated password prompts for each entry.
+        """
+        cmds = self.get_removal_commands(packages)
+        if not cmds:
+            return []
+
+        # If already root, run directly without privilege escalation wrappers
+        if self.is_root:
+            if len(cmds) == 1:
+                return cmds[0]
+            joined_str = " && ".join(" ".join(shlex.quote(arg) for arg in cmd) for cmd in cmds)
+            return ["sh", "-c", joined_str]
+
+        # Regular user: elevate privileges ONCE for the whole batch
+        escalation = "pkexec" if shutil.which("pkexec") else ("sudo" if shutil.which("sudo") else None)
+
+        if len(cmds) == 1:
+            if escalation:
+                return [escalation] + cmds[0]
+            return cmds[0]
+
+        # Multiple sub-commands (e.g. DNF + Snap, or multiple Snaps):
+        # Wrap entire sequence inside a single elevated bash subshell
+        joined_str = " && ".join(" ".join(shlex.quote(arg) for arg in cmd) for cmd in cmds)
+        if escalation:
+            return [escalation, "bash", "-c", joined_str]
+        return ["sh", "-c", joined_str]

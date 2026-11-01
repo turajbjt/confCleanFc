@@ -1,6 +1,6 @@
 Name:           confclean-fc
 Version:        1.0.0
-Release:        1%{?dist}
+Release:        2%{?dist}
 Summary:        Fedora & RPM system cleaner and orphan configuration purger
 
 License:        GPL-3.0-or-later
@@ -31,11 +31,12 @@ without warranty of any kind. Use at your own risk. Always verify items during
 dry run mode before proceeding with deletion.
 
 Features include:
-- Deep scanning for orphaned configurations and .rpmsave / .rpmnew files
+- Deep scanning for orphaned configurations, broken .desktop launchers, and .rpmsave / .rpmnew files
+- Built-in unified diff viewer for inspecting .rpmnew and .rpmsave configuration changes
 - Automatic pre-deletion compressed .tar.gz backups with JSON manifests
 - Built-in interactive selective and full restore tool
 - Cache and junk purger (thumbnails, caches, DNF, journalctl)
-- Safe kernel retention and package manager unneeded dependency optimizer
+- Safe kernel retention, unneeded package optimizer, and Flatpak / Snap runtime pruner
 - Application factory reset tool with automatic pre-reset backup
 - Real-time audit logging and ironclad desktop safelist
 - PyQt6 GUI with modern Adwaita dark theme and headless CLI mode
@@ -119,5 +120,10 @@ fi
 %{_datadir}/icons/hicolor/scalable/apps/confclean-fc.svg
 
 %changelog
+* Sun Nov 01 2026 James Turansky <turajb@plugnpay.com> - 1.0.0-2
+- Add broken .desktop and autostart entry detection and safe cleaning
+- Add Flatpak unused runtime and Snap disabled revision pruning
+- Add built-in unified diff viewer for .rpmnew and .rpmsave files
+
 * Fri Oct 30 2026 James Turansky <turajb@plugnpay.com> - 1.0.0-1
 - Initial RPM release of ConfClean FC for Fedora and RPM distributions

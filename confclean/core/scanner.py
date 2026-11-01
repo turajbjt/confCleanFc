@@ -3,7 +3,10 @@ Deep Configuration Scanner for ConfClean FC.
 Scans user-space and system configuration directories to identify orphaned and leftover files.
 """
 
+import difflib
 import os
+import shlex
+import shutil
 import sys
 import time
 from datetime import datetime
@@ -11,6 +14,59 @@ from typing import Callable, Dict, List, Optional, Tuple
 
 from confclean.core.detector import SystemDetector
 from confclean.core.safelist import SafetyEngine
+
+
+def get_rpm_diff(rpm_path: str) -> Tuple[Optional[str], str, str]:
+    """
+    Computes a unified diff between an active configuration file and its
+    corresponding .rpmnew or .rpmsave file.
+
+    Returns:
+        (active_file_path, rpm_file_path, diff_content)
+    """
+    if not os.path.isfile(rpm_path):
+        return None, rpm_path, f"Error: File '{rpm_path}' does not exist."
+
+    # Identify corresponding active configuration file
+    active_path = None
+    if rpm_path.endswith(".rpmnew"):
+        active_path = rpm_path[:-7]
+    elif rpm_path.endswith(".rpmsave"):
+        active_path = rpm_path[:-8]
+    else:
+        return None, rpm_path, f"Error: '{rpm_path}' is not an .rpmnew or .rpmsave file."
+
+    if not os.path.isfile(active_path):
+        return None, rpm_path, f"Active configuration file '{active_path}' does not exist on disk."
+
+    try:
+        # Check size to avoid diffing huge files (max 2MB)
+        max_bytes = 2 * 1024 * 1024
+        if os.path.getsize(rpm_path) > max_bytes or os.path.getsize(active_path) > max_bytes:
+            return active_path, rpm_path, "Error: File exceeds 2MB limit for visual diffing."
+
+        with open(active_path, "r", encoding="utf-8", errors="replace") as f_active:
+            active_lines = f_active.readlines()
+
+        with open(rpm_path, "r", encoding="utf-8", errors="replace") as f_rpm:
+            rpm_lines = f_rpm.readlines()
+
+        diff_lines = list(
+            difflib.unified_diff(
+                active_lines,
+                rpm_lines,
+                fromfile=f"Active: {active_path}",
+                tofile=f"RPM: {rpm_path}",
+                lineterm="",
+            )
+        )
+
+        if not diff_lines:
+            return active_path, rpm_path, "No differences found between active configuration and package template."
+
+        return active_path, rpm_path, "\n".join(diff_lines)
+    except Exception as e:
+        return active_path, rpm_path, f"Error generating diff: {e}"
 
 
 class ScanItem:
@@ -131,6 +187,7 @@ class ConfigScanner:
         include_flatpaks: bool = True,
         include_dotfiles: bool = True,
         include_system_etc: bool = True,
+        include_broken_desktops: bool = True,
         progress_callback: Optional[Callable[[str, int, int], None]] = None,
     ) -> List[ScanItem]:
         """
@@ -162,6 +219,22 @@ class ConfigScanner:
                     all_candidate_paths.append((full_p, entry, category))
             except (OSError, PermissionError):
                 continue
+
+        # Check Broken Desktop Launchers and Autostart Entries
+        if include_broken_desktops and os.path.isdir(user_home):
+            desktop_dirs = [
+                os.path.join(user_home, ".local", "share", "applications"),
+                os.path.join(user_home, ".config", "autostart"),
+            ]
+            for d_path in desktop_dirs:
+                if os.path.isdir(d_path):
+                    try:
+                        for entry in sorted(os.listdir(d_path)):
+                            if entry.endswith(".desktop"):
+                                full_p = os.path.join(d_path, entry)
+                                all_candidate_paths.append((full_p, entry, "broken_desktop"))
+                    except (OSError, PermissionError):
+                        pass
 
         # Check Home dotfiles
         if include_dotfiles and os.path.isdir(user_home):
@@ -204,6 +277,142 @@ class ConfigScanner:
                 items.append(item)
 
         return items
+
+    def _extract_exec_binary(self, line: str) -> Optional[str]:
+        """Extracts the primary executable name or wrapper target from an Exec= or TryExec= line."""
+        val = line.split("=", 1)[1].strip() if "=" in line else line.strip()
+        if not val:
+            return None
+        try:
+            tokens = shlex.split(val)
+        except ValueError:
+            tokens = val.split()
+        if not tokens:
+            return None
+
+        # Skip environment variable wrappers like 'env FOO=bar binary'
+        idx = 0
+        if tokens[idx] == "env":
+            idx += 1
+            while idx < len(tokens) and "=" in tokens[idx]:
+                idx += 1
+
+        if idx >= len(tokens):
+            return None
+
+        cmd = tokens[idx]
+        if cmd.startswith("%"):
+            return None
+
+        # Handle Flatpak run wrapper
+        if cmd == "flatpak" and idx + 2 < len(tokens) and tokens[idx + 1] == "run":
+            return f"flatpak:{tokens[idx + 2]}"
+
+        # Handle Snap run wrapper
+        if cmd == "snap" and idx + 2 < len(tokens) and tokens[idx + 1] == "run":
+            return f"snap:{tokens[idx + 2]}"
+
+        return cmd
+
+    def _is_binary_valid(self, cmd: str) -> bool:
+        """Validates whether a command, binary, flatpak, or snap exists on the system."""
+        if not cmd:
+            return False
+
+        if cmd.startswith("flatpak:"):
+            appid = cmd[8:].lower()
+            return appid in self.detector.flatpak_apps
+
+        if cmd.startswith("snap:"):
+            snap_name = cmd[5:].lower()
+            return snap_name in self.detector.snap_apps
+
+        # Direct absolute path
+        if os.path.isabs(cmd):
+            return os.path.exists(cmd)
+
+        # In system PATH or detected binaries
+        if shutil.which(cmd):
+            return True
+
+        if cmd.lower() in self.detector.binaries:
+            return True
+
+        return False
+
+    def _analyze_desktop_file(self, path: str, name: str, category: str) -> Optional[ScanItem]:
+        """Analyzes a .desktop file to determine if its target executable is missing (broken)."""
+        is_safe, safe_reason = self.safety.is_safelisted(path)
+        size, count, mtime = get_path_stats(path)
+
+        if is_safe:
+            return ScanItem(
+                path=path,
+                name=name,
+                category=category,
+                is_directory=False,
+                size_bytes=size,
+                file_count=count,
+                last_modified=mtime,
+                status="PROTECTED",
+                reason=safe_reason,
+                suggested_action="keep",
+                is_selected=False,
+            )
+
+        exec_cmd = None
+        try_exec = None
+        app_name = name
+        try:
+            with open(path, "r", encoding="utf-8", errors="replace") as f:
+                for line in f:
+                    line_s = line.strip()
+                    if line_s.startswith("Exec=") and exec_cmd is None:
+                        exec_cmd = line_s
+                    elif line_s.startswith("TryExec=") and try_exec is None:
+                        try_exec = line_s
+                    elif line_s.startswith("Name=") and app_name == name:
+                        app_name = line_s.split("=", 1)[1].strip()
+        except (OSError, PermissionError):
+            return None
+
+        if not exec_cmd and not try_exec:
+            return None
+
+        target_line = try_exec or exec_cmd
+        extracted_binary = self._extract_exec_binary(target_line)
+        if not extracted_binary:
+            return None
+
+        is_valid = self._is_binary_valid(extracted_binary)
+        if not is_valid:
+            return ScanItem(
+                path=path,
+                name=name,
+                category=category,
+                is_directory=False,
+                size_bytes=size,
+                file_count=count,
+                last_modified=mtime,
+                status="CONFIRMED_ORPHAN",
+                reason=f"Broken desktop launcher: Executable '{extracted_binary}' not found on system (App: {app_name})",
+                suggested_action="clean",
+                is_selected=True,
+            )
+        else:
+            return ScanItem(
+                path=path,
+                name=name,
+                category=category,
+                is_directory=False,
+                size_bytes=size,
+                file_count=count,
+                last_modified=mtime,
+                status="ACTIVE_APP",
+                reason=f"Valid desktop launcher for '{extracted_binary}' (App: {app_name})",
+                suggested_action="keep",
+                is_selected=False,
+            )
 
     def _analyze_item(self, path: str, name: str, category: str) -> Optional[ScanItem]:
         """Analyzes a single file or directory item against safety and detector engines."""
@@ -268,7 +477,11 @@ class ConfigScanner:
                     is_selected=False,
                 )
 
-        # 3. Check App Status via Detector
+        # 3. Handle Broken Desktop Launchers & Autostart Entries
+        if category == "broken_desktop":
+            return self._analyze_desktop_file(path, name, category)
+
+        # 4. Check App Status via Detector
         is_active, matched_target, match_type, details = self.detector.check_app_status(name)
 
         size, count, mtime = get_path_stats(path)

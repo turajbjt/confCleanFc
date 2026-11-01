@@ -16,7 +16,7 @@ from confclean.core.logger import get_logger
 from confclean.core.package_manager import PackageManager
 from confclean.core.restore_manager import RestoreManager
 from confclean.core.safelist import SafetyEngine
-from confclean.core.scanner import ConfigScanner
+from confclean.core.scanner import ConfigScanner, get_rpm_diff
 
 
 def format_table(rows: List[List[str]], headers: List[str]) -> str:
@@ -48,6 +48,31 @@ def run_cli(
     backup_mgr = backup_mgr or BackupManager()
     cleaner = cleaner or SafeCleaner(safety=safety, backup_mgr=backup_mgr)
     scanner = scanner or ConfigScanner(safety=safety)
+
+    # Diff View for .rpmnew / .rpmsave
+    if getattr(args, "diff", None):
+        target_file = args.diff
+        active_p, rpm_p, diff_text = get_rpm_diff(target_file)
+        print(f"\nConfiguration Diff: {target_file}")
+        print(f"Active File: {active_p or 'None'}")
+        print("=" * 60)
+        use_color = sys.stdout.isatty()
+        for line in diff_text.splitlines():
+            if use_color:
+                if line.startswith("+++") or line.startswith("---"):
+                    print(f"\033[1;30m{line}\033[0m")
+                elif line.startswith("@@"):
+                    print(f"\033[1;35m{line}\033[0m")
+                elif line.startswith("+"):
+                    print(f"\033[32m{line}\033[0m")
+                elif line.startswith("-"):
+                    print(f"\033[31m{line}\033[0m")
+                else:
+                    print(line)
+            else:
+                print(line)
+        print("=" * 60)
+        return
 
     # 1. Cache Cleaning
     if args.cache:

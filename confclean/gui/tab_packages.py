@@ -49,7 +49,7 @@ class PackageTab(QWidget):
         h_layout.setContentsMargins(12, 10, 12, 10)
 
         desc_lbl = QLabel(
-            "Detect unneeded RPM dependencies and older kernel versions. "
+            "Detect unneeded RPM dependencies, older kernel versions, unused Flatpak runtimes, and disabled Snap revisions. "
             "The currently booted kernel and backup kernel are strictly protected."
         )
         desc_lbl.setStyleSheet("color: #a0a0a0; font-size: 13px;")
@@ -176,7 +176,18 @@ class PackageTab(QWidget):
             self.table.setItem(row, 3, size_item)
 
             # Column 4: Category
-            cat_display = s.category.replace("_", " ").title()
+            if s.category == "flatpak_unused":
+                cat_display = "Flatpak Runtime"
+            elif s.category == "snap_unused":
+                cat_display = "Snap Revision"
+            elif s.category == "old_kernel":
+                cat_display = "Old Kernel"
+            elif s.category == "unneeded_dep":
+                cat_display = "Orphan Dependency"
+            elif s.category == "duplicate":
+                cat_display = "Duplicate Version"
+            else:
+                cat_display = s.category.replace("_", " ").title()
             cat_item = QTableWidgetItem(cat_display)
             cat_item.setFlags(cat_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             self.table.setItem(row, 4, cat_item)

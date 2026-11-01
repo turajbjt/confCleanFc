@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 
 from confclean.core.detector import SystemDetector
 from confclean.core.safelist import SafetyEngine
-from confclean.core.scanner import ConfigScanner, ScanItem, get_path_stats
+from confclean.core.scanner import ConfigScanner, ScanItem, get_path_stats, get_rpm_diff
 
 
 class TestConfigScanner(unittest.TestCase):
@@ -166,6 +166,62 @@ class TestConfigScanner(unittest.TestCase):
 
         self.assertGreaterEqual(len(items), 2)
         self.assertGreaterEqual(len(progress_calls), 2)
+
+    def test_get_rpm_diff_matching_and_differences(self):
+        active_path = os.path.join(self.test_dir, "myconfig.conf")
+        rpm_path = os.path.join(self.test_dir, "myconfig.conf.rpmnew")
+
+        with open(active_path, "w", encoding="utf-8") as f:
+            f.write("setting=old\n")
+        with open(rpm_path, "w", encoding="utf-8") as f:
+            f.write("setting=new\n")
+
+        p1, p2, diff = get_rpm_diff(rpm_path)
+        self.assertEqual(p1, active_path)
+        self.assertEqual(p2, rpm_path)
+        self.assertIn("-setting=old", diff)
+        self.assertIn("+setting=new", diff)
+
+    def test_get_rpm_diff_missing_active(self):
+        rpm_path = os.path.join(self.test_dir, "nonexistent.conf.rpmsave")
+        with open(rpm_path, "w", encoding="utf-8") as f:
+            f.write("backup=true\n")
+
+        p1, p2, msg = get_rpm_diff(rpm_path)
+        self.assertIsNone(p1)
+        self.assertIn("does not exist on disk", msg)
+
+    def test_analyze_broken_desktop_file(self):
+        desktop_dir = os.path.join(self.test_dir, ".local", "share", "applications")
+        os.makedirs(desktop_dir, exist_ok=True)
+        desktop_file = os.path.join(desktop_dir, "ghostapp.desktop")
+
+        with open(desktop_file, "w", encoding="utf-8") as f:
+            f.write("[Desktop Entry]\nName=Ghost App\nExec=nonexistent_binary_xyz --arg\nType=Application\n")
+
+        with patch("shutil.which", return_value=None):
+            item = self.scanner._analyze_item(desktop_file, "ghostapp.desktop", "broken_desktop")
+
+        self.assertIsNotNone(item)
+        self.assertEqual(item.status, "CONFIRMED_ORPHAN")
+        self.assertEqual(item.category, "broken_desktop")
+        self.assertIn("nonexistent_binary_xyz", item.reason)
+        self.assertTrue(item.is_selected)
+
+    def test_analyze_active_desktop_file(self):
+        desktop_dir = os.path.join(self.test_dir, ".local", "share", "applications")
+        os.makedirs(desktop_dir, exist_ok=True)
+        desktop_file = os.path.join(desktop_dir, "goodapp.desktop")
+
+        with open(desktop_file, "w", encoding="utf-8") as f:
+            f.write("[Desktop Entry]\nName=Good App\nExec=good_binary\nType=Application\n")
+
+        with patch("shutil.which", return_value="/usr/bin/good_binary"):
+            item = self.scanner._analyze_item(desktop_file, "goodapp.desktop", "broken_desktop")
+
+        self.assertIsNotNone(item)
+        self.assertEqual(item.status, "ACTIVE_APP")
+        self.assertFalse(item.is_selected)
 
 
 if __name__ == "__main__":

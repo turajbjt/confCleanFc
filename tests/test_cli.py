@@ -436,6 +436,27 @@ class TestCLI(unittest.TestCase):
         self.assertIn("DRY RUN MODE ENABLED BY DEFAULT", output)
         mock_reset.assert_called_with(prof, create_backup=False, dry_run=True)
 
+    @patch("confclean.cli.get_rpm_diff")
+    @patch("sys.stdout", new_callable=io.StringIO)
+    def test_cli_diff_command(self, mock_stdout, mock_diff):
+        mock_diff.return_value = ("/etc/app.conf", "/etc/app.conf.rpmnew", "--- a\n+++ b\n@@ -1 +1 @@\n-old\n+new")
+        args = argparse.Namespace(
+            scan=False,
+            clean=False,
+            dry_run=False,
+            cache=False,
+            packages=False,
+            restore=None,
+            reset_app=None,
+            diff="/etc/app.conf.rpmnew",
+            force=False,
+        )
+        run_cli(args)
+        out = mock_stdout.getvalue()
+        self.assertIn("Configuration Diff", out)
+        self.assertIn("/etc/app.conf.rpmnew", out)
+        self.assertIn("+new", out)
+
 
 if __name__ == "__main__":
     unittest.main()

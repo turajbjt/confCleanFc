@@ -11,8 +11,7 @@ BuildArch:      noarch
 
 Requires:       python3 >= 3.9
 Requires:       python3-pyqt6
-Requires:       python3-rpm
-Requires:       python3-psutil
+Recommends:     python3-rpm
 Recommends:     flatpak
 
 # Helper overrides for building in standalone environments

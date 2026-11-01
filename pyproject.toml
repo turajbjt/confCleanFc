@@ -15,7 +15,6 @@ authors = [
 keywords = ["cleaner", "fedora", "rpm", "cache", "orphan-config", "pyqt6", "system-maintenance"]
 dependencies = [
     "PyQt6>=6.5.0",
-    "psutil>=5.9.0",
 ]
 
 [project.optional-dependencies]

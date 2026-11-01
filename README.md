@@ -47,15 +47,17 @@ ConfClean FC requires **Python 3.9+** and **PyQt6** for its graphical interface:
 
 * **Fedora / RHEL / CentOS Stream / Rocky Linux / AlmaLinux (DNF)**:
   ```bash
-  sudo dnf install python3-pyqt6 python3-rpm python3-psutil
+  sudo dnf install python3-pyqt6
+  # Optional accelerator for sub-second RPM metadata queries:
+  # sudo dnf install python3-rpm
   ```
 * **Ubuntu / Debian (APT)**:
   ```bash
-  sudo apt install python3-pyqt6 python3-psutil
+  sudo apt install python3-pyqt6
   ```
 * **Arch Linux (Pacman)**:
   ```bash
-  sudo pacman -S python-pyqt6 python-psutil
+  sudo pacman -S python-pyqt6
   ```
 * **Python Virtual Environments / Pip**:
   ```bash

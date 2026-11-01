@@ -327,6 +327,19 @@ class TestPackageManager(unittest.TestCase):
             # Ensure "pkexec" does NOT appear repeatedly inside the subshell
             self.assertNotIn("pkexec snap", cmd[3])
 
+    @patch.dict("sys.modules", {"rpm": None})
+    @patch("subprocess.run")
+    def test_get_rpm_info_map_fallback_when_rpm_module_missing(self, mock_run):
+        mock_proc = MagicMock()
+        mock_proc.returncode = 0
+        mock_proc.stdout = "testpkg|1.0.0|1.fc44|x86_64|0|1048576|A test package\n"
+        mock_run.return_value = mock_proc
+
+        pkg_map = self.mgr._get_rpm_info_map()
+        self.assertIn("testpkg-1.0.0-1.fc44.x86_64", pkg_map)
+        self.assertEqual(pkg_map["testpkg"]["size"], 1048576)
+        self.assertEqual(pkg_map["testpkg"]["summary"], "A test package")
+
 
 if __name__ == "__main__":
     unittest.main()

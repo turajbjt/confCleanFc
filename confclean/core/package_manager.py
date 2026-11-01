@@ -156,6 +156,44 @@ class PackageManager:
                     pkg_map[name.lower()] = info
         except Exception as e:
             self.logger.warning(f"Could not read RPM database via python-rpm: {e}")
+
+        # Fallback to rpm command if python-rpm is not installed or returned empty
+        if not pkg_map:
+            try:
+                res = subprocess.run(
+                    ["rpm", "-qa", "--qf", "%{NAME}|%{VERSION}|%{RELEASE}|%{ARCH}|%{EPOCH}|%{SIZE}|%{SUMMARY}\n"],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    timeout=15,
+                )
+                if res.returncode == 0:
+                    for line in res.stdout.splitlines():
+                        parts = line.strip().split("|", 6)
+                        if len(parts) >= 7:
+                            p_name, p_version, p_release, p_arch, p_epoch, p_size, p_summary = parts
+                            epoch_str = p_epoch if p_epoch and p_epoch != "(none)" else "0"
+                            size_int = int(p_size) if p_size.isdigit() else 0
+                            nevra = f"{p_name}-{p_version}-{p_release}.{p_arch}"
+                            envra = f"{p_name}-{epoch_str}:{p_version}-{p_release}.{p_arch}"
+                            nvr = f"{p_name}-{p_version}-{p_release}"
+                            info = {
+                                "name": p_name,
+                                "version": p_version,
+                                "release": p_release,
+                                "arch": p_arch,
+                                "size": size_int,
+                                "summary": p_summary,
+                                "nevra": nevra,
+                            }
+                            pkg_map[nevra.lower()] = info
+                            pkg_map[envra.lower()] = info
+                            pkg_map[nvr.lower()] = info
+                            if p_name.lower() not in pkg_map:
+                                pkg_map[p_name.lower()] = info
+            except Exception as e:
+                self.logger.warning(f"Could not read RPM database via rpm command: {e}")
+
         return pkg_map
 
     def _get_unneeded_packages(self) -> List[PackageSuggestion]:

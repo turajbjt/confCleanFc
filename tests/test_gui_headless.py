@@ -283,6 +283,10 @@ class TestGUIHeadless(unittest.TestCase):
         tab._add_to_whitelist()
         self.mock_safety.add_user_whitelist.assert_called_with("new_item")
 
+        # Verify copyright notice under architecture & safety rules
+        labels = [w.text() for w in tab.findChildren(QLabel)]
+        self.assertTrue(any("BuildDesignCreate.com" in txt for txt in labels))
+
     def test_elevation_worker(self):
         # 1. Success case
         mock_proc_success = MagicMock()

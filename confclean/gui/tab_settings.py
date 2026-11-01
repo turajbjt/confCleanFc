@@ -7,7 +7,7 @@ import os
 import sys
 import shutil
 import subprocess
-from PyQt6.QtCore import QThread, pyqtSignal
+from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtWidgets import (
     QApplication,
     QFrame,
@@ -159,6 +159,13 @@ class SettingsTab(QWidget):
         )
         ab_text.setStyleSheet("color: #a0a0a0; font-size: 12px; line-height: 1.4;")
         ab_layout.addWidget(ab_text)
+
+        # Copyright footer
+        lbl_copyright = QLabel('© <a href="https://builddesigncreate.com" style="color: #727b84; text-decoration: none;">BuildDesignCreate.com</a>')
+        lbl_copyright.setOpenExternalLinks(True)
+        lbl_copyright.setStyleSheet("color: #727b84; font-size: 11px; margin-top: 6px;")
+        lbl_copyright.setAlignment(Qt.AlignmentFlag.AlignRight)
+        ab_layout.addWidget(lbl_copyright)
 
         layout.addWidget(about_card)
 

@@ -48,6 +48,9 @@ cp "${ROOT_DIR}/pyproject.toml" "${TMP_SRC}/"
 find "${TMP_SRC}" -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 find "${TMP_SRC}" -name "*.pyc" -delete 2>/dev/null || true
 
+# Touch all source files to set current timestamp so RPM unpack never leaves source older than previous runtimes
+find "${TMP_SRC}" -exec touch {} +
+
 echo "==> Creating source tarball: ${RPMBUILD_DIR}/SOURCES/${PKG_NAME}-${PKG_VERSION}.tar.gz..."
 tar -czf "${RPMBUILD_DIR}/SOURCES/${PKG_NAME}-${PKG_VERSION}.tar.gz" -C /tmp "${PKG_NAME}-${PKG_VERSION}"
 rm -rf "${TMP_SRC}"

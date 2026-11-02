@@ -1,6 +1,6 @@
 Name:           confclean-fc
 Version:        1.1.4
-Release:        1%{?dist}
+Release:        2%{?dist}
 Summary:        Fedora & RPM system cleaner and orphan configuration purger
 
 License:        GPL-3.0-or-later
@@ -55,6 +55,9 @@ cp -r confclean %{buildroot}%{_datadir}/%{name}/
 cp -r assets %{buildroot}%{_datadir}/%{name}/
 install -m 755 main.py %{buildroot}%{_datadir}/%{name}/main.py
 
+# Pre-compile Python bytecode so the RPM package owns and manages all .pyc files
+/usr/bin/python3 -m compileall -q -f -s %{buildroot} -p / %{buildroot}%{_datadir}/%{name}
+
 # Install CLI wrapper / binaries into /usr/bin
 mkdir -p %{buildroot}%{_bindir}
 cat << 'EOF' > %{buildroot}%{_bindir}/confclean-fc
@@ -102,12 +105,18 @@ install -m 644 CONTRIBUTING.md %{buildroot}%{_docdir}/%{name}/
 mkdir -p %{buildroot}%{_licensedir}/%{name}
 install -m 644 LICENSE %{buildroot}%{_licensedir}/%{name}/
 
+%pre
+# Purge any stale unmanaged runtime __pycache__ from prior installs
+rm -rf %{_datadir}/%{name}/confclean/**/__pycache__ %{_datadir}/%{name}/confclean/__pycache__ 2>/dev/null || :
+
 %post
 /usr/bin/touch --no-create %{_datadir}/icons/hicolor &>/dev/null || :
 /usr/bin/update-desktop-database &>/dev/null || :
+/usr/bin/python3 -m compileall -q -f %{_datadir}/%{name} &>/dev/null || :
 
 %postun
 if [ $1 -eq 0 ] ; then
+    rm -rf %{_datadir}/%{name}/confclean/**/__pycache__ %{_datadir}/%{name}/confclean/__pycache__ 2>/dev/null || :
     /usr/bin/touch --no-create %{_datadir}/icons/hicolor &>/dev/null || :
     /usr/bin/gtk-update-icon-cache %{_datadir}/icons/hicolor &>/dev/null || :
     /usr/bin/update-desktop-database &>/dev/null || :
@@ -127,6 +136,9 @@ fi
 %{_datadir}/polkit-1/actions/io.github.confclean_fc.policy
 
 %changelog
+* Mon Nov 02 2026 James Turansky <turajb@gmail.com> - 1.1.4-2
+- Package compiled Python bytecode and purge stale unmanaged pycache across upgrades
+
 * Sun Nov 01 2026 James Turansky <turajb@gmail.com> - 1.1.4-1
 - Increase application logo size to 42x42 (75% larger) in header
 

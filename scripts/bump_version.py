@@ -147,6 +147,7 @@ def update_docs(old_version: str, new_version: str):
         with open(doc_path, "r", encoding="utf-8") as f:
             content = f.read()
         new_content = content.replace(f"confclean-fc-{old_version}", f"confclean-fc-{new_version}")
+        new_content = new_content.replace(f"release-v{old_version}", f"release-v{new_version}")
         with open(doc_path, "w", encoding="utf-8") as f:
             f.write(new_content)
         print(f"  [✓] Updated {os.path.relpath(doc_path, ROOT_DIR)} ({old_version} -> {new_version})")

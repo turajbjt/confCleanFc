@@ -1,5 +1,11 @@
 # ConfClean FC 🛡️🧹
 
+[![Release](https://img.shields.io/badge/release-v1.1.4-blue.svg)](https://github.com/turajbjt/confCleanFc/releases)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
+[![Fedora](https://img.shields.io/badge/Fedora-40%20%7C%2041%20%7C%2042%20%7C%2043%20%7C%2044-294172?logo=fedora&logoColor=white)](https://fedoraproject.org)
+[![Python](https://img.shields.io/badge/Python-3.9%2B-blue?logo=python&logoColor=white)](pyproject.toml)
+[![Status](https://img.shields.io/badge/status-BETA-orange)](README.md#%EF%B8%8F-beta-software--use-at-your-own-risk)
+
 **ConfClean FC** is a powerful, safety-first graphical system cleaner and configuration purger built specifically for **Fedora Linux** and compatible **RPM-based distributions** (Rocky Linux, CentOS Stream, RHEL, and AlmaLinux).
 
 Inspired by the philosophy of tools like OrphyCleaner, ConfClean FC goes substantially further: it provides an end-to-end configuration cleaner with **automatic pre-deletion compressed backup archives**, a **built-in interactive restore tool** (selective or whole), **cache and junk cleanup**, **DNF/RPM package suggestions** (unneeded dependencies and safe old kernel cleanup), **application factory reset**, and an **ironclad system safelist**.
@@ -68,7 +74,9 @@ ConfClean FC requires **Python 3.9+** and **PyQt6** for its graphical interface:
 > If PyQt6 is not installed on your system, ConfClean FC can still run in headless CLI mode via `--scan`, `--clean`, `--cache`, etc., or will display an informative prompt with the exact command to install PyQt6.
 
 ### 1. Install via RPM Package (Recommended)
-You can directly install the pre-built `.rpm` package using `dnf` or `rpm`:
+Download the pre-built `.rpm` package directly from [GitHub Releases](https://github.com/turajbjt/confCleanFc/releases) or build it locally using `./packaging/build-rpm.sh`.
+
+Install the `.rpm` package locally using `dnf` or `rpm`:
 ```bash
 # Install locally with automatic dependency resolution:
 sudo dnf install ./confclean-fc-1.1.4-1.fc44.noarch.rpm

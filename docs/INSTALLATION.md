@@ -10,6 +10,8 @@ This guide provides instructions for installing, running, updating, and complete
 
 Installing the pre-built `.rpm` package provides full system integration: it installs `/usr/bin/confclean` and `/usr/bin/confclean-fc` into system PATH, configures system desktop launchers, and installs scalable high-resolution application icons for GNOME, KDE, and XFCE.
 
+Download the pre-built `.rpm` package directly from [GitHub Releases](https://github.com/turajbjt/confCleanFc/releases) or build it locally with `./packaging/build-rpm.sh`.
+
 ```bash
 # Using DNF with automatic dependency resolution:
 sudo dnf install ./confclean-fc-1.1.4-1.fc44.noarch.rpm

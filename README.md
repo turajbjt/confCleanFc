@@ -74,15 +74,13 @@ ConfClean FC requires **Python 3.9+** and **PyQt6** for its graphical interface:
 > If PyQt6 is not installed on your system, ConfClean FC can still run in headless CLI mode via `--scan`, `--clean`, `--cache`, etc., or will display an informative prompt with the exact command to install PyQt6.
 
 ### 1. Install via RPM Package (Recommended)
-Download the pre-built `.rpm` package directly from [GitHub Releases](https://github.com/turajbjt/confCleanFc/releases) or build it locally using `./packaging/build-rpm.sh`.
-
-Install the `.rpm` package locally using `dnf` or `rpm`:
+You can directly install the pre-built `.rpm` package included in the repository using `dnf` or `rpm`:
 ```bash
 # Install locally with automatic dependency resolution:
-sudo dnf install ./confclean-fc-1.1.4-1.fc44.noarch.rpm
+sudo dnf install ./confclean-fc-1.1.4-2.fc44.noarch.rpm
 
 # Or with rpm:
-sudo rpm -ivh ./confclean-fc-1.1.4-1.fc44.noarch.rpm
+sudo rpm -ivh ./confclean-fc-1.1.4-2.fc44.noarch.rpm
 ```
 
 Once installed, launch ConfClean FC from your application menu or directly in terminal:

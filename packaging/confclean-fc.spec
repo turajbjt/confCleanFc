@@ -1,6 +1,6 @@
 Name:           confclean-fc
 Version:        1.1.4
-Release:        3%{?dist}
+Release:        4%{?dist}
 Summary:        Fedora & RPM system cleaner and orphan configuration purger
 
 License:        GPL-3.0-or-later
@@ -56,8 +56,9 @@ cp -r confclean %{buildroot}%{_datadir}/%{name}/
 cp -r assets %{buildroot}%{_datadir}/%{name}/
 install -m 755 main.py %{buildroot}%{_datadir}/%{name}/main.py
 
-# Pre-compile Python bytecode so the RPM package owns and manages all .pyc files
-/usr/bin/python3 -m compileall -q -f -s %{buildroot} -p / %{buildroot}%{_datadir}/%{name}
+# Ensure noarch RPM contains pure Python source without version-locked bytecode
+find %{buildroot}%{_datadir}/%{name} -name "*.pyc" -delete 2>/dev/null || :
+find %{buildroot}%{_datadir}/%{name} -depth -type d -name "__pycache__" -delete 2>/dev/null || :
 
 # Install CLI wrapper / binaries into /usr/bin
 mkdir -p %{buildroot}%{_bindir}
@@ -106,18 +107,15 @@ install -m 644 CONTRIBUTING.md %{buildroot}%{_docdir}/%{name}/
 mkdir -p %{buildroot}%{_licensedir}/%{name}
 install -m 644 LICENSE %{buildroot}%{_licensedir}/%{name}/
 
-%pre
-# Purge any stale unmanaged runtime __pycache__ from prior installs
-rm -rf %{_datadir}/%{name}/confclean/**/__pycache__ %{_datadir}/%{name}/confclean/__pycache__ 2>/dev/null || :
-
 %post
 /usr/bin/touch --no-create %{_datadir}/icons/hicolor &>/dev/null || :
 /usr/bin/update-desktop-database &>/dev/null || :
-/usr/bin/python3 -m compileall -q -f %{_datadir}/%{name} &>/dev/null || :
+/usr/bin/python3 -m compileall -q %{_datadir}/%{name} &>/dev/null || :
 
 %postun
 if [ $1 -eq 0 ] ; then
-    rm -rf %{_datadir}/%{name}/confclean/**/__pycache__ %{_datadir}/%{name}/confclean/__pycache__ 2>/dev/null || :
+    find %{_datadir}/%{name} -name "*.pyc" -delete 2>/dev/null || :
+    find %{_datadir}/%{name} -depth -type d -name "__pycache__" -delete 2>/dev/null || :
     /usr/bin/touch --no-create %{_datadir}/icons/hicolor &>/dev/null || :
     /usr/bin/gtk-update-icon-cache %{_datadir}/icons/hicolor &>/dev/null || :
     /usr/bin/update-desktop-database &>/dev/null || :
@@ -137,6 +135,11 @@ fi
 %{_datadir}/polkit-1/actions/io.github.confclean_fc.policy
 
 %changelog
+* Wed Nov 04 2026 James Turansky <turajb@gmail.com> - 1.1.4-4
+- Make noarch RPM purely Python source and eliminate conflicting %pre scriptlet
+- Compile bytecode on target system in %post to match installed Python version
+- Eliminate "remove failed: No such file or directory" errors during dnf upgrade
+
 * Wed Nov 04 2026 James Turansky <turajb@gmail.com> - 1.1.4-3
 - Consolidate CLI and GUI features into unified, non-redundant offerings
 - Unify Application Configs view (Uninstalled Leftovers & Factory Reset) into single 6-tab navigation

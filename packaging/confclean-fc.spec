@@ -1,6 +1,6 @@
 Name:           confclean-fc
 Version:        1.1.4
-Release:        9%{?dist}
+Release:        10%{?dist}
 Summary:        Fedora & RPM system cleaner and orphan configuration purger
 
 License:        GPL-3.0-or-later
@@ -91,12 +91,20 @@ Terminal=false
 Type=Application
 Categories=System;Utility;Settings;
 StartupNotify=true
+StartupWMClass=confclean-fc
 Keywords=cleaner;orphans;config;cache;fedora;rpm;backup;restore;bleachbit;fedy;
 EOF
 
 # Install application icons
 mkdir -p %{buildroot}%{_datadir}/icons/hicolor/scalable/apps
 install -m 644 assets/icon.svg %{buildroot}%{_datadir}/icons/hicolor/scalable/apps/confclean-fc.svg
+
+for size in 16 24 32 48 64 128 256 512 ; do
+    if [ -f "assets/icons/${size}x${size}/confclean-fc.png" ]; then
+        mkdir -p %{buildroot}%{_datadir}/icons/hicolor/${size}x${size}/apps
+        install -m 644 "assets/icons/${size}x${size}/confclean-fc.png" %{buildroot}%{_datadir}/icons/hicolor/${size}x${size}/apps/confclean-fc.png
+    fi
+done
 
 # Install documentation & licenses
 mkdir -p %{buildroot}%{_docdir}/%{name}
@@ -109,6 +117,7 @@ install -m 644 LICENSE %{buildroot}%{_licensedir}/%{name}/
 
 %post
 /usr/bin/touch --no-create %{_datadir}/icons/hicolor &>/dev/null || :
+/usr/bin/gtk-update-icon-cache %{_datadir}/icons/hicolor &>/dev/null || :
 /usr/bin/update-desktop-database &>/dev/null || :
 /usr/bin/python3 -m compileall -q %{_datadir}/%{name} &>/dev/null || :
 
@@ -131,10 +140,15 @@ fi
 %{_bindir}/confclean
 %{_datadir}/%{name}
 %{_datadir}/applications/confclean-fc.desktop
-%{_datadir}/icons/hicolor/scalable/apps/confclean-fc.svg
+%{_datadir}/icons/hicolor/*/apps/confclean-fc.*
 %{_datadir}/polkit-1/actions/io.github.confclean_fc.policy
 
 %changelog
+* Wed Nov 04 2026 James Turansky <turajb@gmail.com> - 1.1.4-10
+- Set desktopFileName and applicationName to confclean-fc for GNOME Wayland app_id icon mapping
+- Add StartupWMClass=confclean-fc to desktop launcher
+- Install standard raster icon sizes (16x16 to 512x512) and update icon cache in %post
+
 * Wed Nov 04 2026 James Turansky <turajb@gmail.com> - 1.1.4-9
 - Run SELinux schedule and cancel operations asynchronously in background QThread to keep GUI responsive
 - Fix window manager focus-stealing and authentication dialog interruption in GNOME/Wayland

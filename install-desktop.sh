@@ -34,6 +34,7 @@ Terminal=false
 Type=Application
 Categories=System;Utility;Settings;
 StartupNotify=true
+StartupWMClass=confclean-fc
 Keywords=cleaner;orphans;config;cache;fedora;rpm;backup;restore;bleachbit;fedy;
 EOF
 

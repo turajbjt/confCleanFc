@@ -64,17 +64,28 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(900, 580)
         self.auto_scan_on_nav = auto_scan_on_nav
 
+        # Ensure application identity and desktop file mapping for Wayland/GNOME
+        app_inst = QApplication.instance()
+        if app_inst:
+            if not app_inst.desktopFileName():
+                app_inst.setDesktopFileName("confclean-fc")
+            if not app_inst.applicationName():
+                app_inst.setApplicationName("confclean-fc")
+
         # Set window icon
         self.app_icon_path = None
         icon_candidates = [
             os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "assets", "icon.svg"),
             "/usr/share/confclean-fc/assets/icon.svg",
             "/usr/share/icons/hicolor/scalable/apps/confclean-fc.svg",
+            "/usr/share/icons/hicolor/256x256/apps/confclean-fc.png",
         ]
         for icon_path in icon_candidates:
             if os.path.isfile(icon_path):
                 self.app_icon_path = icon_path
                 self.setWindowIcon(QIcon(icon_path))
+                if app_inst:
+                    app_inst.setWindowIcon(QIcon(icon_path))
                 break
 
         # Initialize core engines
@@ -248,7 +259,23 @@ class MainWindow(QMainWindow):
 def run_gui(ready_signal: bool = False):
     """Starts the PyQt6 GUI application."""
     app = QApplication(sys.argv)
+    app.setApplicationName("confclean-fc")
+    app.setApplicationDisplayName("ConfClean FC")
+    app.setDesktopFileName("confclean-fc")
+    app.setOrganizationName("io.github.confclean_fc")
+    app.setOrganizationDomain("builddesigncreate.com")
     app.setStyleSheet(ADWAITA_DARK_STYLE)
+
+    icon_candidates = [
+        os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "assets", "icon.svg"),
+        "/usr/share/confclean-fc/assets/icon.svg",
+        "/usr/share/icons/hicolor/scalable/apps/confclean-fc.svg",
+        "/usr/share/icons/hicolor/256x256/apps/confclean-fc.png",
+    ]
+    for icon_path in icon_candidates:
+        if os.path.isfile(icon_path):
+            app.setWindowIcon(QIcon(icon_path))
+            break
 
     window = MainWindow()
     window.show()

@@ -49,6 +49,15 @@ class SystemDetector:
         "microsoft teams - preview": ["teams", "teams-for-linux"],
         "dconf": ["dconf", "dconf-editor"],
         "abrt": ["abrt", "libreport"],
+        "nextcloud": ["nextcloud", "com.nextcloud.desktopclient.nextcloud"],
+        "musicbrainz": ["picard", "org.musicbrainz.Picard"],
+        "virt-manager": ["virt-manager", "virt-viewer"],
+        "openscad": ["openscad", "org.openscad.OpenSCAD"],
+        "brasero": ["brasero", "org.gnome.Brasero"],
+        "zoom": ["zoom", "zoomus", "us.zoom.Zoom"],
+        "audacity": ["audacity", "org.audacityteam.Audacity"],
+        "krita": ["krita", "org.kde.krita"],
+        "filezilla": ["filezilla", "org.filezillaproject.Filezilla"],
     }
 
     def __init__(self, refresh_on_init: bool = True):

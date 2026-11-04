@@ -1,6 +1,6 @@
 Name:           confclean-fc
 Version:        1.1.4
-Release:        7%{?dist}
+Release:        8%{?dist}
 Summary:        Fedora & RPM system cleaner and orphan configuration purger
 
 License:        GPL-3.0-or-later
@@ -135,6 +135,10 @@ fi
 %{_datadir}/polkit-1/actions/io.github.confclean_fc.policy
 
 %changelog
+* Wed Nov 04 2026 James Turansky <turajb@gmail.com> - 1.1.4-8
+- Expand Factory Reset library to 30 desktop applications (Slack, Nextcloud, Cura, Android Studio, GitKraken, Picard, etc.)
+- Add detector mapping aliases for newly supported desktop applications
+
 * Wed Nov 04 2026 James Turansky <turajb@gmail.com> - 1.1.4-7
 - Auto-refresh custom safelist UI on tab navigation and showEvent
 - Expose load_user_whitelist() on SafelistManager and refresh_whitelist() on SettingsTab

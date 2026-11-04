@@ -137,6 +137,102 @@ class AppResetter:
             "desc": "Resets email profiles, cached messages, and mail accounts.",
             "patterns": ["~/.thunderbird", "~/.cache/thunderbird"],
         },
+        {
+            "id": "slack",
+            "name": "Slack",
+            "desc": "Resets workspace session, notification settings, and cached assets.",
+            "patterns": ["~/.config/Slack", "~/.cache/Slack"],
+        },
+        {
+            "id": "nextcloud",
+            "name": "Nextcloud Desktop",
+            "desc": "Resets server sync connections, account logins, and preferences (keeps local files).",
+            "patterns": ["~/.config/Nextcloud"],
+        },
+        {
+            "id": "cura",
+            "name": "Ultimaker Cura",
+            "desc": "Resets 3D printer definitions, slicing profiles, materials, and plugin caches.",
+            "patterns": ["~/.config/cura", "~/.cache/cura"],
+        },
+        {
+            "id": "gitkraken",
+            "name": "GitKraken",
+            "desc": "Resets Git GUI preferences, workspace layout, and cached repositories.",
+            "patterns": ["~/.config/GitKraken", "~/.cache/GitKraken"],
+        },
+        {
+            "id": "android-studio",
+            "name": "Android Studio",
+            "desc": "Resets IDE user configurations, custom plugins, UI themes, and workspace caches.",
+            "patterns": ["~/.config/Google/AndroidStudio*", "~/.cache/Google/AndroidStudio*"],
+        },
+        {
+            "id": "musicbrainz",
+            "name": "MusicBrainz Picard",
+            "desc": "Resets audio tagger settings, plugin configs, and acoustic fingerprint cache.",
+            "patterns": ["~/.config/MusicBrainz", "~/.cache/MusicBrainz"],
+        },
+        {
+            "id": "virt-manager",
+            "name": "Virtual Machine Manager",
+            "desc": "Resets virt-manager UI preferences and connection list (does not delete VM disk images).",
+            "patterns": ["~/.config/virt-manager"],
+        },
+        {
+            "id": "openscad",
+            "name": "OpenSCAD",
+            "desc": "Resets 3D CAD editor settings, color schemes, and recently opened models.",
+            "patterns": ["~/.config/OpenSCAD"],
+        },
+        {
+            "id": "brasero",
+            "name": "Brasero Disc Burner",
+            "desc": "Resets optical media burning preferences and temporary disc project caches.",
+            "patterns": ["~/.config/brasero", "~/.cache/brasero"],
+        },
+        {
+            "id": "spotify",
+            "name": "Spotify",
+            "desc": "Resets Spotify client settings, offline song cache, and local login session.",
+            "patterns": ["~/.config/spotify", "~/.cache/spotify"],
+        },
+        {
+            "id": "zoom",
+            "name": "Zoom Video Communications",
+            "desc": "Resets Zoom audio/video device preferences, meeting history, and cached assets.",
+            "patterns": ["~/.config/zoomus", "~/.zoom"],
+        },
+        {
+            "id": "obs-studio",
+            "name": "OBS Studio",
+            "desc": "Resets streaming/recording profiles, scene collections, and video encoder presets.",
+            "patterns": ["~/.config/obs-studio"],
+        },
+        {
+            "id": "audacity",
+            "name": "Audacity",
+            "desc": "Resets audio editor toolbar layouts, VST/plugin scan databases, and temporary caches.",
+            "patterns": ["~/.config/audacity", "~/.cache/audacity"],
+        },
+        {
+            "id": "krita",
+            "name": "Krita Digital Painting",
+            "desc": "Resets drawing brushes, canvas color palettes, shortcuts, and cache.",
+            "patterns": ["~/.config/krita*", "~/.cache/krita"],
+        },
+        {
+            "id": "telegram",
+            "name": "Telegram Desktop",
+            "desc": "Resets local session data, media cache, and theme settings.",
+            "patterns": ["~/.local/share/TelegramDesktop"],
+        },
+        {
+            "id": "filezilla",
+            "name": "FileZilla FTP Client",
+            "desc": "Resets FTP client UI layout, transfer queue, and site manager preferences.",
+            "patterns": ["~/.config/filezilla"],
+        },
     ]
 
     def __init__(

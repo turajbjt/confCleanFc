@@ -57,6 +57,11 @@ class TestAppResetter(unittest.TestCase):
         with open(os.path.join(fake_flatpak, "data.bin"), "wb") as f:
             f.write(b"12345")
 
+        fake_slack = os.path.join(fake_home, ".config", "Slack")
+        os.makedirs(fake_slack, exist_ok=True)
+        with open(os.path.join(fake_slack, "config.json"), "w") as f:
+            f.write("{}")
+
         with patch("os.path.expanduser", side_effect=lambda p: p.replace("~", fake_home)):
             profiles = self.resetter.discover_reset_profiles()
 
@@ -64,6 +69,10 @@ class TestAppResetter(unittest.TestCase):
         ff_prof = next((p for p in profiles if p.app_id == "firefox"), None)
         self.assertIsNotNone(ff_prof)
         self.assertIn(fake_firefox, ff_prof.target_paths)
+
+        slack_prof = next((p for p in profiles if p.app_id == "slack"), None)
+        self.assertIsNotNone(slack_prof)
+        self.assertIn(fake_slack, slack_prof.target_paths)
 
         flatpak_prof = next((p for p in profiles if p.app_id == "flatpak_org.test.FlatpakApp"), None)
         self.assertIsNotNone(flatpak_prof)

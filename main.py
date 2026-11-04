@@ -20,35 +20,38 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python3 main.py                     # Launch graphical interface (default)
-  python3 main.py --scan              # Scan and list orphaned configs in terminal
-  python3 main.py --clean             # Clean confirmed orphans with pre-backup
-  python3 main.py --dry-run           # Simulate orphan cleanup without deletion
-  python3 main.py --cache             # List cleanable cache and temporary data
-  python3 main.py --packages          # Query DNF for unneeded packages & old kernels
-  python3 main.py --restore list      # List all past backup archives
-  python3 main.py --restore <ID>      # Restore files from a specific backup
-  python3 main.py --reset-app firefox # Reset app settings with automatic backup
-  python3 main.py --symlinks          # Scan for broken and stale symlinks
-  python3 main.py --symlinks --clean  # Clean broken symlinks (dry run by default)
-  python3 main.py --retired           # Scan for retired / orphaned repo packages
-  python3 main.py --retired --clean   # Remove retired packages (dry run by default)
-  python3 main.py --selinux-fix-boot  # Schedule SELinux file context fix on next boot
-  python3 main.py --selinux-status    # Check SELinux status & next-boot relabeling
+  python3 main.py                          # Launch graphical interface (default)
+  python3 main.py --scan                   # Scan and list orphaned configs & symlinks
+  python3 main.py --scan --symlinks-only   # Scan only broken and stale symlinks
+  python3 main.py --clean                  # Clean confirmed orphans with pre-backup (dry run by default)
+  python3 main.py --clean --apply          # Execute permanent cleanup of confirmed orphans
+  python3 main.py --packages               # Query DNF for unneeded packages, retired packages & old kernels
+  python3 main.py --packages --retired-only# Query only retired / repository-orphaned packages
+  python3 main.py --packages --clean-cache # Purge DNF and PackageKit download caches
+  python3 main.py --cache                  # List all cleanable cache and temporary data
+  python3 main.py --restore list           # List all past backup archives
+  python3 main.py --restore <ID>           # Restore files from a specific backup
+  python3 main.py --reset-app firefox      # Reset app settings with automatic backup
+  python3 main.py --selinux-fix-boot       # Schedule SELinux file context fix on next boot
+  python3 main.py --selinux-status         # Check SELinux status & next-boot relabeling
         """,
     )
 
     parser.add_argument("--gui", action="store_true", help="Launch the graphical interface (default)")
     parser.add_argument("--elevated-child", action="store_true", help=argparse.SUPPRESS)
-    parser.add_argument("--scan", action="store_true", help="Scan for orphaned settings and print summary")
+    parser.add_argument("--scan", action="store_true", help="Scan for orphaned settings, broken symlinks, and print summary")
+    parser.add_argument("--symlinks-only", action="store_true", help="Filter scan and clean operations to broken and stale symlinks only")
     parser.add_argument("--clean", action="store_true", help="Clean detected orphan items (dry run by default unless --apply is passed)")
     parser.add_argument("--dry-run", action="store_true", default=False, help="Simulate without deleting files (ENABLED by default)")
     parser.add_argument("--apply", "--no-dry-run", action="store_true", dest="apply", help="Execute actual deletion/changes (disables dry run)")
     parser.add_argument("--no-backup", action="store_true", help="Skip creating backup archive before cleaning")
     parser.add_argument("--cache", action="store_true", help="Scan or clean application and system cache")
     parser.add_argument("--packages", action="store_true", help="Scan for unneeded RPM packages, retired packages, and old kernels")
-    parser.add_argument("--retired", action="store_true", help="Scan and clean retired / repository-orphaned packages (repo extras)")
-    parser.add_argument("--symlinks", action="store_true", help="Scan and clean broken or stale symlinks in user and system directories")
+    parser.add_argument("--retired-only", action="store_true", help="Filter package operations to retired / repository-orphaned packages only")
+    parser.add_argument("--clean-cache", action="store_true", help="Purge DNF / PackageKit package manager download caches")
+    # Backwards-compatible aliases
+    parser.add_argument("--retired", action="store_true", help="Alias for: --packages --retired-only")
+    parser.add_argument("--symlinks", action="store_true", help="Alias for: --scan --symlinks-only")
     parser.add_argument("--selinux-fix-boot", "--fix-selinux", "--selinux", action="store_true", dest="selinux_fix_boot", help="Schedule SELinux policy and file context relabel on next boot (sudo fixfiles -B onboot)")
     parser.add_argument("--selinux-status", action="store_true", help="Display SELinux status and next-boot relabeling schedule")
     parser.add_argument("--restore", nargs="?", const="list", help="List or restore pre-clean backup archives")
@@ -58,6 +61,14 @@ Examples:
 
     args = parser.parse_args()
 
+    # Normalize aliases to unified offerings
+    if args.retired:
+        args.packages = True
+        args.retired_only = True
+    if args.symlinks:
+        args.scan = True
+        args.symlinks_only = True
+
     # Determine execution mode: CLI or GUI
     cli_flags = [
         args.scan,
@@ -65,8 +76,9 @@ Examples:
         args.dry_run,
         args.cache,
         args.packages,
-        args.retired,
-        args.symlinks,
+        args.retired_only,
+        args.clean_cache,
+        args.symlinks_only,
         args.selinux_fix_boot,
         args.selinux_status,
         (args.restore is not None),

@@ -34,12 +34,11 @@ from confclean.core.safelist import SafetyEngine
 from confclean.core.scanner import ConfigScanner
 from confclean.core.selinux_manager import SELinuxManager
 from confclean.gui.styles import ADWAITA_DARK_STYLE
-from confclean.gui.tab_app_reset import AppResetTab
+from confclean.gui.tab_apps import AppConfigsTab
 from confclean.gui.tab_cache import CacheTab
 from confclean.gui.tab_logs import LogsTab
 from confclean.gui.tab_packages import PackageTab
 from confclean.gui.tab_restore import RestoreTab
-from confclean.gui.tab_scanner import ScannerTab
 from confclean.gui.tab_settings import SettingsTab
 
 
@@ -163,10 +162,9 @@ class MainWindow(QMainWindow):
         self.sidebar.setIconSize(QSize(20, 20))
 
         nav_items = [
-            ("🔍  Orphan Configs", "scanner"),
+            ("📱  Application Configs", "apps"),
             ("🧹  Cache & Junk", "cache"),
-            ("📦  Package Manager", "packages"),
-            ("🔄  App Reset", "reset"),
+            ("📦  Packages & System", "packages"),
             ("🗄️  Restore & Backups", "restore"),
             ("📋  Audit Logs", "logs"),
             ("⚙️  Settings & Safelist", "settings"),
@@ -183,33 +181,36 @@ class MainWindow(QMainWindow):
         # Stacked Views Widget
         self.stack = QStackedWidget()
 
-        # 1. Scanner Tab
-        self.tab_scanner = ScannerTab(self.scanner, self.cleaner, self.safety)
-        self.tab_scanner.status_changed.connect(self._on_scanner_stats_changed)
-        self.stack.addWidget(self.tab_scanner)
+        # 1. Unified Application Configs Tab (Leftovers + Factory Reset)
+        self.tab_apps = AppConfigsTab(self.scanner, self.cleaner, self.safety, self.app_resetter)
+        self.tab_apps.status_changed.connect(self._on_scanner_stats_changed)
+        # Expose tab_scanner and tab_reset as direct references for backward compatibility
+        self.tab_scanner = self.tab_apps.tab_scanner
+        self.tab_reset = self.tab_apps.tab_reset
+        self.stack.addWidget(self.tab_apps)
 
         # 2. Cache Tab
         self.tab_cache = CacheTab(self.cache_cleaner)
         self.stack.addWidget(self.tab_cache)
 
-        # 3. Package Tab
-        self.tab_packages = PackageTab(self.pkg_mgr)
+        # 3. Packages & System Tab
+        self.tab_packages = PackageTab(
+            self.pkg_mgr,
+            selinux_mgr=self.selinux_mgr,
+            cache_cleaner=self.cache_cleaner,
+        )
         self.stack.addWidget(self.tab_packages)
 
-        # 4. App Reset Tab
-        self.tab_reset = AppResetTab(self.app_resetter)
-        self.stack.addWidget(self.tab_reset)
-
-        # 5. Restore Tab
+        # 4. Restore Tab
         self.tab_restore = RestoreTab(self.backup_mgr, self.restore_mgr)
         self.stack.addWidget(self.tab_restore)
 
-        # 6. Logs Tab
+        # 5. Logs Tab
         self.tab_logs = LogsTab(self.logger)
         self.stack.addWidget(self.tab_logs)
 
-        # 7. Settings Tab
-        self.tab_settings = SettingsTab(self.safety, selinux_mgr=self.selinux_mgr)
+        # 6. Settings Tab
+        self.tab_settings = SettingsTab(self.safety)
         self.stack.addWidget(self.tab_settings)
 
         body_layout.addWidget(self.stack, stretch=1)
@@ -223,15 +224,16 @@ class MainWindow(QMainWindow):
         if not self.auto_scan_on_nav:
             return
         # Auto-trigger refresh for specific tabs when switched
-        if index == 0 and not self.tab_scanner.scanned_items:
-            self.tab_scanner.start_scan()
+        if index == 0:
+            if not self.tab_scanner.scanned_items:
+                self.tab_scanner.start_scan()
+            if not self.tab_reset.profiles:
+                self.tab_reset.load_profiles()
         elif index == 1 and not self.tab_cache.categories:
             self.tab_cache.scan_caches()
         elif index == 2 and not self.tab_packages.suggestions:
             self.tab_packages.start_package_scan()
-        elif index == 3 and not self.tab_reset.profiles:
-            self.tab_reset.load_profiles()
-        elif index == 4 and not self.tab_restore.backups:
+        elif index == 3 and not self.tab_restore.backups:
             self.tab_restore.load_backups()
 
     def _on_scanner_stats_changed(self):

@@ -36,6 +36,7 @@ flowchart TD
         Restore["RestoreManager (restore_manager.py)"]
         Cache["CacheCleaner (cache_cleaner.py)"]
         PkgMgr["PackageManager (package_manager.py)"]
+        SELinux["SELinuxManager (selinux_manager.py)"]
         AppReset["AppResetter (app_resetter.py)"]
         Logger["AuditLogger (logger.py)"]
     end

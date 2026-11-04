@@ -77,10 +77,10 @@ ConfClean FC requires **Python 3.9+** and **PyQt6** for its graphical interface:
 You can directly install the pre-built `.rpm` package included in the repository using `dnf` or `rpm`:
 ```bash
 # Install locally with automatic dependency resolution:
-sudo dnf install ./confclean-fc-1.1.4-2.fc44.noarch.rpm
+sudo dnf install ./confclean-fc-1.1.4-3.fc45.noarch.rpm
 
 # Or with rpm:
-sudo rpm -ivh ./confclean-fc-1.1.4-2.fc44.noarch.rpm
+sudo rpm -ivh ./confclean-fc-1.1.4-3.fc45.noarch.rpm
 ```
 
 Once installed, launch ConfClean FC from your application menu or directly in terminal:
@@ -124,28 +124,44 @@ If running from source rather than RPM:
 For complete details, see the dedicated 📖 **[Installation & Uninstallation Guide](docs/INSTALLATION.md)**.
 
 ### 5. CLI Commands (Headless / Terminal-Driven)
-ConfClean FC also works seamlessly without a display. **Safety Note:** Deletion operations run in **DRY RUN mode by default** to prevent accidental loss; use `--apply` (or `--no-dry-run`) to commit changes:
+ConfClean FC works seamlessly without a graphical display. **Safety Note:** Deletion operations run in **DRY RUN mode by default** to prevent accidental loss; use `--apply` (or `--no-dry-run`) to commit changes:
 
 ```bash
-# Scan system and display a formatted table of discovered orphan configurations
+# Scan system for orphaned configs and broken/stale symlinks
 ./main.py --scan
+
+# Scan only broken and stale symbolic links
+./main.py --scan --symlinks-only
 
 # Dry-run simulation of orphan cleanup (default behavior)
 ./main.py --clean
-# or explicitly:
-./main.py --dry-run
 
-# Commit actual orphan cleanup with automatic pre-deletion safety backup
+# Commit actual orphan and broken symlink cleanup with pre-deletion safety backup
 ./main.py --clean --apply
 
-# Scan cleanable caches, thumbnails, trash, and system temporary data
+# Scan all cleanable caches, thumbnails, journals, trash, and temporary data
 ./main.py --cache
 
-# Clean caches (Dry run by default; use --apply to commit purge)
+# Clean all system caches (Dry run by default; use --apply to commit purge)
 ./main.py --cache --clean --apply
 
-# Query DNF for unneeded dependencies and old kernels
+# Query DNF for unneeded dependencies, retired packages, and old kernels
 ./main.py --packages
+
+# Query only retired / repository-orphaned packages
+./main.py --packages --retired-only
+
+# Purge DNF and PackageKit download caches directly from package manager
+./main.py --packages --clean-cache --apply
+
+# Remove unneeded / retired packages (Dry run by default; use --apply to commit)
+./main.py --packages --clean --apply
+
+# Schedule an on-boot SELinux policy and file context fix (sudo fixfiles -B onboot)
+./main.py --selinux-fix-boot
+
+# Check SELinux status and next-boot relabeling schedule
+./main.py --selinux-status
 
 # View syntax-highlighted unified diff for an RPM upgrade artifact (.rpmnew / .rpmsave)
 ./main.py --diff /etc/cups/cupsd.conf.rpmnew
@@ -229,15 +245,16 @@ confCleanFc/
 │   │   ├── safelist.py       # Built-in system safelist and custom whitelist
 │   │   └── scanner.py        # Deep scanner for user and system configs
 │   ├── gui/
-│   │   ├── app.py            # Primary PyQt6 window with sidebar navigation
+│   │   ├── app.py            # Primary PyQt6 window with 6-tab sidebar navigation
 │   │   ├── styles.py         # Modern Fedora Adwaita dark theme stylesheet
-│   │   ├── tab_app_reset.py  # App Reset view
+│   │   ├── tab_apps.py       # Unified Application Configs view (Leftovers + Factory Reset)
+│   │   ├── tab_app_reset.py  # App Reset view component
 │   │   ├── tab_cache.py      # Cache & Junk Cleaner view
 │   │   ├── tab_logs.py       # Real-time searchable Audit Logs view
-│   │   ├── tab_packages.py   # DNF Package Optimizer view
+│   │   ├── tab_packages.py   # Packages & System Maintenance view (Packages, Cache & SELinux)
 │   │   ├── tab_restore.py    # Restore & Backups manager view
-│   │   ├── tab_scanner.py    # Main Orphan Config Scanner view
-│   │   ├── tab_settings.py   # Custom Whitelist & Privilege Settings view
+│   │   ├── tab_scanner.py    # Orphan Config Scanner view component
+│   │   ├── tab_settings.py   # Custom Whitelist & Protection Settings view
 │   │   └── workers.py        # Non-blocking QThread background workers
 │   └── cli.py                # Command-line interface implementation
 ├── docs/                     # Detailed architectural and user guides

@@ -38,10 +38,11 @@ When run without flags in a graphical desktop session (Wayland or X11), ConfClea
 ### Module Flags
 | Flag | Description |
 | :--- | :--- |
-| `--cache` | Scan cleanable application caches, thumbnails, trash, and system temporary files. When combined with `--clean`, purges them. |
-| `--packages` | Scan DNF, RPM, Flatpak, and Snap for unneeded dependencies, redundant kernels, unused runtimes, and disabled revisions. |
-| `--retired` | Scan and remove retired or repository-orphaned RPM packages (extras no longer present in any active repo). |
-| `--symlinks` | Scan and clean broken or stale symbolic links across user and system directories. |
+| `--cache` | Scan cleanable application caches, thumbnails, trash, journals, and system temporary files. When combined with `--clean`, purges them. |
+| `--packages` | Scan DNF, RPM, Flatpak, and Snap for unneeded dependencies, retired packages, redundant kernels, unused runtimes, and disabled revisions. |
+| `--retired-only` | Filter package operations to retired or repository-orphaned packages only (repo extras). Alias: `--retired`. |
+| `--clean-cache` | Purge DNF and PackageKit download caches directly from package operations. |
+| `--symlinks-only` | Filter scan and clean operations to broken and stale symbolic links only. Alias: `--symlinks`. |
 | `--selinux-fix-boot` | Schedule SELinux policy and file context relabel on next boot (`sudo fixfiles -B onboot`). Alias: `--fix-selinux`. |
 | `--selinux-status` | Display current SELinux enforcement mode, policy, and next-boot autorelabel schedule. |
 | `--diff <FILE>` | View a syntax-highlighted unified diff between an RPM template (`.rpmnew` or `.rpmsave`) and its active configuration file. |
@@ -110,10 +111,15 @@ Purge caches for real:
 ./main.py --cache --clean --apply -f
 ```
 
-### 6. Query Unneeded Packages and Old Kernels
-Query DNF for unneeded dependencies and old redundant kernels while preserving the booted kernel (`uname -r`):
+### 6. Query Unneeded Packages, Retired Packages, and Old Kernels
+Query DNF for unneeded dependencies, repository orphans, and old redundant kernels while preserving the booted kernel (`uname -r`):
 ```bash
 ./main.py --packages
+```
+
+To purge DNF and PackageKit download caches directly:
+```bash
+./main.py --packages --clean-cache --apply
 ```
 
 ### 7. List and Restore Backup Archives
@@ -147,17 +153,19 @@ Compare an incoming RPM upgrade template against the existing live configuration
 ### 10. Scan and Remove Retired Packages (Repo Extras)
 Scan installed packages that are no longer available in any active repository:
 ```bash
+./main.py --packages --retired-only
+# or alias:
 ./main.py --retired
 ```
 
 Simulate removal (dry run by default):
 ```bash
-./main.py --retired --clean
+./main.py --packages --retired-only --clean
 ```
 
 Execute removal of retired packages:
 ```bash
-./main.py --retired --clean --apply
+./main.py --packages --retired-only --clean --apply
 ```
 
 ### 11. Schedule SELinux Policy & File Context Fix on Next Boot

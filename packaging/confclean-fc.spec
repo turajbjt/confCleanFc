@@ -1,6 +1,6 @@
 Name:           confclean-fc
 Version:        1.1.4
-Release:        2%{?dist}
+Release:        3%{?dist}
 Summary:        Fedora & RPM system cleaner and orphan configuration purger
 
 License:        GPL-3.0-or-later
@@ -137,6 +137,13 @@ fi
 %{_datadir}/polkit-1/actions/io.github.confclean_fc.policy
 
 %changelog
+* Wed Nov 04 2026 James Turansky <turajb@gmail.com> - 1.1.4-3
+- Consolidate CLI and GUI features into unified, non-redundant offerings
+- Unify Application Configs view (Uninstalled Leftovers & Factory Reset) into single 6-tab navigation
+- Move SELinux on-boot relabeling and direct DNF package cache cleaning into Packages & System tab
+- Unify CLI package operations (--packages [--retired-only] [--clean-cache]) and scan operations (--scan [--symlinks-only])
+- Thoroughly purge DNF/RPM package caches and foreign systemd journal directories
+
 * Mon Nov 02 2026 James Turansky <turajb@gmail.com> - 1.1.4-2
 - Package compiled Python bytecode and purge stale unmanaged pycache across upgrades
 

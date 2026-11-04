@@ -403,17 +403,25 @@ class TestGUIHeadless(unittest.TestCase):
             app_resetter=self.mock_resetter,
             auto_scan_on_nav=False,
         )
-        self.assertEqual(win.stack.count(), 7)
+        self.assertEqual(win.stack.count(), 6)
         self.assertTrue(hasattr(win, "lbl_logo"))
         self.assertFalse(win.lbl_logo.pixmap().isNull())
         self.assertEqual(win.lbl_logo.width(), 42)
         self.assertEqual(win.lbl_logo.height(), 42)
 
+        # Verify unified Application Configs tab embeds both sub-tabs
+        self.assertTrue(hasattr(win, "tab_apps"))
+        self.assertEqual(win.tab_apps.tabs.count(), 2)
+        self.assertEqual(win.tab_apps.tab_scanner, win.tab_scanner)
+        self.assertEqual(win.tab_apps.tab_reset, win.tab_reset)
+
         # Test sidebar switches
         win.sidebar.setCurrentRow(1)
         self.assertEqual(win.stack.currentIndex(), 1)
-        win.sidebar.setCurrentRow(4)
-        self.assertEqual(win.stack.currentIndex(), 4)
+        win.sidebar.setCurrentRow(3)
+        self.assertEqual(win.stack.currentIndex(), 3)
+        win.sidebar.setCurrentRow(5)
+        self.assertEqual(win.stack.currentIndex(), 5)
 
         # Test auto-scan on navigating to Package Manager tab when list is blank
         win.auto_scan_on_nav = True
@@ -595,7 +603,7 @@ class TestGUIHeadless(unittest.TestCase):
         tab._select_all_visible()
         self.assertTrue(tab.suggestions[0].is_selected)
 
-    def test_settings_tab_selinux_maintenance(self):
+    def test_package_tab_selinux_and_cache_maintenance(self):
         from confclean.core.selinux_manager import SELinuxManager
         from PyQt6.QtWidgets import QMessageBox
 
@@ -609,9 +617,10 @@ class TestGUIHeadless(unittest.TestCase):
             "fixfiles_available": True,
         }
 
-        tab = SettingsTab(self.mock_safety, selinux_mgr=mock_selinux)
+        tab = PackageTab(self.mock_pkg, selinux_mgr=mock_selinux, cache_cleaner=self.mock_cache)
         self.assertTrue(hasattr(tab, "btn_fix_selinux"))
         self.assertTrue(hasattr(tab, "btn_cancel_selinux"))
+        self.assertTrue(hasattr(tab, "btn_clean_cache"))
         self.assertIn("Permissive", tab.lbl_selinux_status.text())
 
         # Test schedule fixfiles -B onboot
@@ -624,6 +633,15 @@ class TestGUIHeadless(unittest.TestCase):
         mock_selinux.cancel_onboot_fix.return_value = (True, "Cancelled")
         tab._cancel_selinux_fix()
         mock_selinux.cancel_onboot_fix.assert_called_once_with(use_pkexec=True)
+
+        # Test DNF cache purge from package tab
+        cat1 = MagicMock()
+        cat1.category_id = "dnf_cache"
+        cat1.formatted_size = "200.0 MB"
+        self.mock_cache.scan_categories.return_value = [cat1]
+        self.mock_cache.clean_category.return_value = (1024 * 1024 * 200, 15, "Cleaned")
+        tab._purge_package_cache()
+        self.mock_cache.clean_category.assert_called_once_with(cat1, dry_run=False)
 
 
 if __name__ == "__main__":

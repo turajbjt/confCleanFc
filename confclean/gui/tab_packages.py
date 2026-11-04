@@ -24,21 +24,31 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from confclean.core.cache_cleaner import CacheCleaner
 from confclean.core.package_manager import PackageManager, PackageSuggestion
+from confclean.core.selinux_manager import SELinuxManager
 from confclean.gui.workers import PackageRemovalWorker, PackageScanWorker
 
 
 class PackageTab(QWidget):
-    """View for inspecting and removing orphaned or unused RPM packages."""
+    """View for inspecting and removing orphaned RPM packages, managing package cache, and SELinux policies."""
 
-    def __init__(self, pkg_mgr: PackageManager):
+    def __init__(
+        self,
+        pkg_mgr: PackageManager,
+        selinux_mgr: Optional[SELinuxManager] = None,
+        cache_cleaner: Optional[CacheCleaner] = None,
+    ):
         super().__init__()
         self.pkg_mgr = pkg_mgr
+        self.selinux_mgr = selinux_mgr or SELinuxManager()
+        self.cache_cleaner = cache_cleaner or CacheCleaner()
         self.suggestions: List[PackageSuggestion] = []
         self.worker: Optional[PackageScanWorker] = None
         self.removal_worker: Optional[PackageRemovalWorker] = None
 
         self._init_ui()
+        self._refresh_selinux_ui()
 
     def _init_ui(self):
         layout = QVBoxLayout(self)
@@ -52,13 +62,18 @@ class PackageTab(QWidget):
         h_layout.setContentsMargins(12, 10, 12, 10)
 
         desc_lbl = QLabel(
-            "Detect unneeded RPM dependencies, retired packages, older kernel versions, unused Flatpak runtimes, and disabled Snap revisions. "
+            "Manage RPM dependencies, retired packages, older kernels, Flatpak runtimes, DNF download cache, and SELinux policies. "
             "The currently booted kernel and backup kernel are strictly protected."
         )
         desc_lbl.setStyleSheet("color: #a0a0a0; font-size: 13px;")
         h_layout.addWidget(desc_lbl)
 
         h_layout.addStretch()
+
+        self.btn_clean_cache = QPushButton("🧹 Purge DNF Cache")
+        self.btn_clean_cache.setToolTip("Purge downloaded RPM packages, metadata, and PackageKit cache")
+        self.btn_clean_cache.clicked.connect(self._purge_package_cache)
+        h_layout.addWidget(self.btn_clean_cache)
 
         self.btn_refresh = QPushButton("🔍 Analyze Packages")
         self.btn_refresh.setProperty("class", "primary")
@@ -137,6 +152,53 @@ class PackageTab(QWidget):
         b_layout.addWidget(self.btn_remove)
 
         layout.addWidget(bottom_card)
+
+        # SELinux System Maintenance Card
+        selinux_card = QFrame()
+        selinux_card.setProperty("class", "card")
+        sl_layout = QVBoxLayout(selinux_card)
+        sl_layout.setContentsMargins(12, 10, 12, 10)
+        sl_layout.setSpacing(8)
+
+        sl_header = QHBoxLayout()
+        sl_title = QLabel("🛡️ SELinux Policy & File Context Maintenance")
+        sl_title.setStyleSheet("font-size: 14px; font-weight: bold; color: #ffffff;")
+        sl_header.addWidget(sl_title)
+        sl_header.addStretch()
+
+        self.btn_refresh_selinux = QPushButton("🔄 Refresh")
+        self.btn_refresh_selinux.clicked.connect(self._refresh_selinux_ui)
+        sl_header.addWidget(self.btn_refresh_selinux)
+        sl_layout.addLayout(sl_header)
+
+        sl_desc = QLabel(
+            "Fix security file contexts and SELinux policies across system directories. "
+            "Scheduling 'fixfiles -B onboot' relabels files created or modified since last boot "
+            "during next system startup without performing an excessively slow full-disk scan."
+        )
+        sl_desc.setStyleSheet("color: #a0a0a0; font-size: 12px;")
+        sl_layout.addWidget(sl_desc)
+
+        # Status and Actions row
+        sl_status_row = QHBoxLayout()
+        self.lbl_selinux_status = QLabel("SELinux: Checking status...")
+        self.lbl_selinux_status.setStyleSheet("font-size: 13px;")
+        sl_status_row.addWidget(self.lbl_selinux_status)
+        sl_status_row.addStretch()
+
+        self.btn_fix_selinux = QPushButton("🛡️ Fix SELinux on Next Boot (sudo fixfiles -B onboot)")
+        self.btn_fix_selinux.setProperty("class", "primary")
+        self.btn_fix_selinux.clicked.connect(self._schedule_selinux_fix)
+        sl_status_row.addWidget(self.btn_fix_selinux)
+
+        self.btn_cancel_selinux = QPushButton("❌ Cancel Scheduled Relabel")
+        self.btn_cancel_selinux.setProperty("class", "destructive")
+        self.btn_cancel_selinux.setVisible(False)
+        self.btn_cancel_selinux.clicked.connect(self._cancel_selinux_fix)
+        sl_status_row.addWidget(self.btn_cancel_selinux)
+
+        sl_layout.addLayout(sl_status_row)
+        layout.addWidget(selinux_card)
 
         # Progress bar
         self.progress_bar = QProgressBar()
@@ -415,3 +477,110 @@ class PackageTab(QWidget):
         self.btn_refresh.setEnabled(True)
         self.btn_remove.setEnabled(True)
         QMessageBox.critical(self, "Execution Error", f"Failed to execute package removal: {error}")
+
+    def _purge_package_cache(self):
+        """Purges DNF and PackageKit download caches directly from Package tab."""
+        cats = [c for c in self.cache_cleaner.scan_categories() if c.category_id == "dnf_cache"]
+        if not cats:
+            QMessageBox.information(self, "Package Cache", "No package cache found.")
+            return
+
+        cat = cats[0]
+        reply = QMessageBox.question(
+            self,
+            "Purge Package Cache",
+            f"Are you sure you want to clean DNF and PackageKit package caches ({cat.formatted_size})?\n\n"
+            "This will safely remove downloaded RPM packages, solv files, and expired metadata. "
+            "No installed software will be removed.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            reclaimed, count, msg = self.cache_cleaner.clean_category(cat, dry_run=False)
+            QMessageBox.information(
+                self,
+                "Package Cache Purged",
+                f"Successfully cleaned package cache!\n\nReclaimed: {reclaimed / (1024*1024):.1f} MB ({count} items removed)",
+            )
+
+    def _refresh_selinux_ui(self):
+        """Refreshes SELinux status badge and action button states."""
+        st = self.selinux_mgr.get_status()
+        is_supported = self.selinux_mgr.is_selinux_supported()
+        is_scheduled = st["autorelabel_scheduled"]
+
+        if not is_supported:
+            self.lbl_selinux_status.setText("SELinux: <b>Not Installed / Unsupported</b>")
+            self.btn_fix_selinux.setEnabled(False)
+            self.btn_cancel_selinux.setVisible(False)
+            return
+
+        mode = st["mode"]
+        policy = st["policy"]
+        if is_scheduled:
+            flags = st["autorelabel_flags"] or "active"
+            status_txt = (
+                f"SELinux: <b>{mode}</b> ({policy}) | "
+                f"<span style='color: #f6c177; font-weight: bold;'>⚠️ Relabel Scheduled on Next Boot ({flags})</span>"
+            )
+            self.btn_cancel_selinux.setVisible(True)
+            self.btn_cancel_selinux.setEnabled(True)
+            self.btn_fix_selinux.setText("🛡️ Re-Schedule Relabel on Next Boot")
+        else:
+            status_txt = (
+                f"SELinux: <b>{mode}</b> ({policy}) | "
+                f"<span style='color: #9ece6a;'>✓ Normal Boot (No relabel pending)</span>"
+            )
+            self.btn_cancel_selinux.setVisible(False)
+            self.btn_fix_selinux.setText("🛡️ Fix SELinux on Next Boot (sudo fixfiles -B onboot)")
+
+        self.lbl_selinux_status.setText(status_txt)
+        self.btn_fix_selinux.setEnabled(st["fixfiles_available"])
+
+    def _schedule_selinux_fix(self):
+        """Schedules fixfiles -B onboot for next system startup."""
+        if not self.selinux_mgr.is_selinux_supported():
+            QMessageBox.critical(
+                self,
+                "SELinux Unavailable",
+                "The 'fixfiles' utility is not installed. Please install 'policycoreutils' to enable SELinux maintenance.",
+            )
+            return
+
+        reply = QMessageBox.question(
+            self,
+            "Confirm SELinux Relabel on Next Boot",
+            "This will schedule 'fixfiles -B onboot'.\n\n"
+            "During the next system startup, the system will verify and fix SELinux security contexts "
+            "for files created or modified since last boot without doing a slow full disk relabel.\n\n"
+            "Proceed with scheduling?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        success, msg = self.selinux_mgr.schedule_onboot_fix(boottime_only=True, use_pkexec=True)
+        if success:
+            QMessageBox.information(self, "SELinux Relabel Scheduled", msg)
+        else:
+            QMessageBox.critical(self, "SELinux Relabel Error", msg)
+
+        self._refresh_selinux_ui()
+
+    def _cancel_selinux_fix(self):
+        """Cancels a scheduled on-boot SELinux relabel."""
+        reply = QMessageBox.question(
+            self,
+            "Cancel SELinux Relabel",
+            "Are you sure you want to cancel the scheduled SELinux relabel for the next boot?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        success, msg = self.selinux_mgr.cancel_onboot_fix(use_pkexec=True)
+        if success:
+            QMessageBox.information(self, "SELinux Relabel Cancelled", msg)
+        else:
+            QMessageBox.warning(self, "Error", msg)
+
+        self._refresh_selinux_ui()

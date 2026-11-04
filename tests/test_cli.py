@@ -721,6 +721,95 @@ class TestCLI(unittest.TestCase):
         self.assertIn("SELinux relabel scheduled for next boot", out)
         mock_selinux.schedule_onboot_fix.assert_called_once_with(boottime_only=True, use_sudo=True)
 
+    def test_cli_packages_retired_only_flag(self):
+        mock_pkg_mgr = MagicMock()
+        ret_pkg = PackageSuggestion(
+            name="orphan-app",
+            version="2.0",
+            release="1.fc44",
+            arch="x86_64",
+            size_bytes=2048,
+            summary="Retired package",
+            category="repo_orphan",
+            reason="Retired repo orphan",
+            is_protected=False,
+            is_selected=True,
+        )
+        mock_pkg_mgr.scan_retired_packages.return_value = [ret_pkg]
+        mock_pkg_mgr.get_removal_command.return_value = ["pkexec", "dnf", "remove", "-y", "orphan-app"]
+
+        args = argparse.Namespace(
+            scan=False, clean=False, dry_run=False, cache=False, packages=True,
+            retired_only=True, clean_cache=False, symlinks_only=False, retired=False, symlinks=False,
+            selinux_status=False, selinux_fix_boot=False, restore=None, reset_app=None, force=False, no_backup=False,
+        )
+        with patch("sys.stdout", new_callable=io.StringIO) as mock_stdout:
+            run_cli(args, pkg_mgr=mock_pkg_mgr)
+            out = mock_stdout.getvalue()
+
+        self.assertIn("orphan-app", out)
+        self.assertIn("--packages --retired-only --clean", out)
+        mock_pkg_mgr.scan_retired_packages.assert_called_once()
+
+    def test_cli_scan_symlinks_only_flag(self):
+        mock_symlink = ScanItem(
+            path="/home/user/.config/broken.lnk",
+            name="broken.lnk",
+            category="broken_symlink",
+            is_directory=False,
+            size_bytes=0,
+            file_count=1,
+            last_modified=10000.0,
+            status="CONFIRMED_ORPHAN",
+            reason="Broken symlink target missing",
+        )
+        self.mock_scanner.scan_broken_symlinks.return_value = [mock_symlink]
+
+        args = argparse.Namespace(
+            scan=True, symlinks_only=True, clean=False, dry_run=False, cache=False, packages=False,
+            retired_only=False, clean_cache=False, retired=False, symlinks=False,
+            selinux_status=False, selinux_fix_boot=False, restore=None, reset_app=None, force=False, no_backup=False,
+        )
+        with patch("sys.stdout", new_callable=io.StringIO) as mock_stdout:
+            run_cli(args, scanner=self.mock_scanner)
+            out = mock_stdout.getvalue()
+
+        self.assertIn("broken.lnk", out)
+        self.assertIn("Broken symlink target missing", out)
+        self.assertIn("--symlinks --clean", out)
+        self.mock_scanner.scan_broken_symlinks.assert_called_once()
+
+    @patch("confclean.cli.CacheCleaner")
+    def test_cli_packages_clean_cache(self, mock_cc_class):
+        mock_cc = MagicMock()
+        mock_cc_class.return_value = mock_cc
+        cat_dnf = CacheCategory(
+            category_id="dnf_cache",
+            name="DNF / RPM Package Cache",
+            description="Package cache",
+            requires_root=True,
+            paths=["/var/cache/dnf"],
+            size_bytes=50000,
+        )
+        mock_cc.scan_categories.return_value = [cat_dnf]
+        mock_cc.clean_category.return_value = (50000, 5, "Purged DNF cache")
+
+        args = argparse.Namespace(
+            scan=False, clean=False, dry_run=False, apply=True, cache=False, packages=True,
+            retired_only=False, clean_cache=True, symlinks_only=False, retired=False, symlinks=False,
+            selinux_status=False, selinux_fix_boot=False, restore=None, reset_app=None, force=True, no_backup=False,
+        )
+        mock_pkg_mgr = MagicMock()
+        mock_pkg_mgr.scan_all_suggestions.return_value = []
+
+        with patch("sys.stdout", new_callable=io.StringIO) as mock_stdout:
+            run_cli(args, pkg_mgr=mock_pkg_mgr)
+            out = mock_stdout.getvalue()
+
+        self.assertIn("Purging DNF / PackageKit cache", out)
+        self.assertIn("Purged DNF cache", out)
+        mock_cc.clean_category.assert_called_once_with(cat_dnf, dry_run=False)
+
 
 if __name__ == "__main__":
     unittest.main()

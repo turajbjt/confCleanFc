@@ -144,108 +144,93 @@ def run_cli(
                 print(f"\nTotal Cache Reclaimed: {total_cleaned / (1024*1024):.2f} MB")
         return
 
-    # 2. Package Management
-    elif args.packages:
+    # 2. Package & System Management
+    elif args.packages or getattr(args, "retired", False) or getattr(args, "clean_cache", False):
         pkg_mgr_inst = get_pkg_mgr()
-        print("\nQuerying DNF / RPM for unneeded packages, retired packages, and old kernels...")
-        suggs = pkg_mgr_inst.scan_all_suggestions()
+        is_dry_run = getattr(args, "dry_run", False) or (not getattr(args, "apply", False) if hasattr(args, "apply") else False)
+
+        # 2a. Clean Package Manager Cache if requested
+        if getattr(args, "clean_cache", False):
+            cache_cleaner = CacheCleaner(safety=get_safety())
+            cats = [c for c in cache_cleaner.scan_categories() if c.category_id == "dnf_cache"]
+            if cats:
+                cat = cats[0]
+                if is_dry_run:
+                    print(f"\n[DRY RUN] Would purge DNF / PackageKit cache ({cat.formatted_size}).")
+                    print("[DRY RUN MODE ENABLED BY DEFAULT] No cache files were removed. To execute, add --apply.")
+                else:
+                    if not args.force:
+                        confirm = input(f"\nPurge DNF / PackageKit cache ({cat.formatted_size})? [y/N]: ")
+                        if confirm.lower() not in ["y", "yes"]:
+                            print("Package cache purge cancelled.")
+                            return
+                    print(f"\nPurging DNF / PackageKit cache ({cat.formatted_size})...")
+                    reclaimed, count, msg = cache_cleaner.clean_category(cat, dry_run=False)
+                    print(f"{msg}")
+            if not (args.packages or getattr(args, "retired_only", False) or getattr(args, "retired", False)):
+                return
+
+        # 2b. Package Scanning & Removal (All suggestions or Retired-only)
+        is_retired_only = getattr(args, "retired_only", False) or getattr(args, "retired", False)
+        if is_retired_only:
+            print("\nQuerying DNF / RPM for retired and repository-orphaned packages...")
+            suggs = pkg_mgr_inst.scan_retired_packages()
+            empty_msg = "No retired packages found! All installed packages are available in your repositories."
+            pkg_type_label = "retired package(s)"
+        else:
+            print("\nQuerying DNF / RPM for unneeded packages, retired packages, and old kernels...")
+            suggs = pkg_mgr_inst.scan_all_suggestions()
+            empty_msg = "No unneeded packages or removable kernels found."
+            pkg_type_label = "package(s)"
+
         if not suggs:
-            print("No unneeded packages or removable kernels found.")
+            print(empty_msg)
             return
 
         table_rows = []
         for s in suggs:
-            table_rows.append([s.name, s.version, s.formatted_size, s.category, "YES" if s.is_protected else "NO"])
+            table_rows.append([s.name, s.version, s.formatted_size, s.category if hasattr(s, "category") else s.reason, "YES" if s.is_protected else "NO"])
 
-        print("\n" + format_table(table_rows, ["Package", "Version", "Size", "Category", "Protected"]))
+        print("\n" + format_table(table_rows, ["Package", "Version", "Size", "Category / Reason", "Protected"]))
         removable = [s for s in suggs if not s.is_protected and s.is_selected]
 
         if not (args.clean or args.dry_run):
             if removable:
                 cmd = pkg_mgr_inst.get_removal_command(removable)
                 print(f"\nSuggested Removal Command:\n  {' '.join(cmd)}")
-                print("\nTo remove these packages, run: python3 main.py --packages --clean")
+                cmd_hint = "--packages --retired-only --clean" if is_retired_only else "--packages --clean"
+                print(f"\nTo remove these packages, run: python3 main.py {cmd_hint}")
             return
 
         if not removable:
-            print("\nNo removable packages selected (all detected items are protected).")
+            print(f"\nNo removable {pkg_type_label} selected (all detected items are protected).")
             return
 
         cmd = pkg_mgr_inst.get_removal_command(removable)
-        is_dry_run = getattr(args, "dry_run", False) or (not getattr(args, "apply", False) if hasattr(args, "apply") else False)
-
         if is_dry_run:
-            print(f"\n[DRY RUN] Would execute package removal for {len(removable)} package(s):")
+            if is_retired_only:
+                print(f"\n[DRY RUN] Would remove {len(removable)} retired package(s): {' '.join(p.name for p in removable)}")
+            else:
+                print(f"\n[DRY RUN] Would execute package removal for {len(removable)} package(s):")
             print(f"Command: {' '.join(cmd)}")
             print("[DRY RUN MODE ENABLED BY DEFAULT] No packages were removed. To execute actual deletion, add --apply.")
             return
 
         if args.clean:
             if not args.force:
-                confirm = input(f"\nAre you sure you want to remove {len(removable)} package(s)? [y/N]: ")
+                confirm = input(f"\nAre you sure you want to remove {len(removable)} {pkg_type_label}? [y/N]: ")
                 if confirm.lower() not in ["y", "yes"]:
-                    print("Package removal cancelled by user.")
+                    print(f"Package removal cancelled by user.")
                     return
 
-            print(f"\nExecuting package removal: {' '.join(cmd)}")
+            action_desc = "retired package removal" if is_retired_only else "package removal"
+            print(f"\nExecuting {action_desc}: {' '.join(cmd)}")
             import subprocess
             res = subprocess.run(cmd)
             if res.returncode == 0:
-                print("\nPackage removal completed successfully.")
+                print(f"\n{action_desc.capitalize()} completed successfully.")
             else:
                 print(f"\nPackage removal exited with status code {res.returncode}.")
-            return
-
-    # 2b. Retired / Repository-Orphaned Packages
-    elif getattr(args, "retired", False):
-        pkg_mgr_inst = get_pkg_mgr()
-        print("\nQuerying DNF / RPM for retired and repository-orphaned packages...")
-        suggs = pkg_mgr_inst.scan_retired_packages()
-        if not suggs:
-            print("No retired packages found! All installed packages are available in your repositories.")
-            return
-
-        table_rows = []
-        for s in suggs:
-            table_rows.append([s.name, s.version, s.formatted_size, s.reason, "YES" if s.is_protected else "NO"])
-
-        print("\n" + format_table(table_rows, ["Package", "Version", "Size", "Reason", "Protected"]))
-        removable = [s for s in suggs if not s.is_protected and s.is_selected]
-
-        if not (args.clean or args.dry_run):
-            if removable:
-                cmd = pkg_mgr_inst.get_removal_command(removable)
-                print(f"\nSuggested Removal Command:\n  {' '.join(cmd)}")
-                print("\nTo remove these retired packages, run: python3 main.py --retired --clean")
-            return
-
-        if not removable:
-            print("\nNo removable retired packages found (any detected packages are protected).")
-            return
-
-        cmd = pkg_mgr_inst.get_removal_command(removable)
-        is_dry_run = getattr(args, "dry_run", False) or (not getattr(args, "apply", False) if hasattr(args, "apply") else False)
-
-        if is_dry_run:
-            print(f"\n[DRY RUN] Would remove {len(removable)} retired package(s): {' '.join(p.name for p in removable)}")
-            print(f"Command: {' '.join(cmd)}")
-            print("[DRY RUN MODE ENABLED BY DEFAULT] No packages were removed. To execute actual deletion, add --apply.")
-            return
-
-        if args.clean:
-            if not args.force:
-                confirm = input(f"\nAre you sure you want to remove {len(removable)} retired package(s)? [y/N]: ")
-                if confirm.lower() not in ["y", "yes"]:
-                    print("Retired package removal cancelled by user.")
-                    return
-
-            print(f"\nExecuting retired package removal: {' '.join(cmd)}")
-            import subprocess
-            res = subprocess.run(cmd)
-            if res.returncode == 0:
-                print("\nRetired package removal completed successfully.")
-            else:
-                print(f"\nRetired package removal exited with status code {res.returncode}.")
             return
 
     # 2c. SELinux Status
@@ -378,79 +363,54 @@ def run_cli(
             print(f"Safety Backup Created at: {b_arch}")
         return
 
-    # 5. Broken / Stale Symlink Scanning and Cleaning
-    elif getattr(args, "symlinks", False):
-        print("\nScanning for broken and stale symbolic links...")
-        items = scanner.scan_broken_symlinks()
-        broken = [i for i in items if i.status == "CONFIRMED_ORPHAN"]
-        stale = [i for i in items if i.status == "PROBABLE_ORPHAN"]
-
-        table_rows = []
-        for it in broken:
-            table_rows.append([it.name, it.path, it.reason, it.status])
-
-        if table_rows:
-            print("\n" + format_table(table_rows, ["Symlink", "Location", "Reason", "Status"]))
-            print(f"\nDiscovered {len(broken)} broken symbolic link(s).")
-            if stale:
-                print(f"Discovered {len(stale)} stale symlink(s) pointing to temporary paths.")
+    # 5. Scan / Clean Orphan Configurations & Symlinks
+    elif args.scan or args.clean or args.dry_run or getattr(args, "symlinks_only", False) or getattr(args, "symlinks", False):
+        is_symlinks_only = getattr(args, "symlinks_only", False) or getattr(args, "symlinks", False)
+        if is_symlinks_only:
+            print("\nScanning for broken and stale symbolic links...")
+            items = scanner.scan_broken_symlinks()
         else:
-            print("\nNo broken or stale symbolic links found! Your system symlinks are clean.")
-            return
+            print("\nScanning for leftover configurations, broken symlinks, and orphaned settings...")
+            items = scanner.scan_all()
 
-        # If only scan requested without clean or dry_run
-        if not (args.clean or args.dry_run):
-            print("\nTo remove these broken symlinks, run: python3 main.py --symlinks --clean")
-            return
-
-        is_dry_run = getattr(args, "dry_run", False) or (not getattr(args, "apply", False) if hasattr(args, "apply") else False)
-
-        if is_dry_run:
-            res, summary = cleaner.clean_items(broken, create_backup=False, dry_run=True)
-            print(f"\n[DRY RUN] {summary}")
-            print("[DRY RUN MODE ENABLED BY DEFAULT] No symlinks were removed. To execute actual deletion, add --apply.")
-            return
-
-        if args.clean:
-            if not args.force:
-                confirm = input(f"\nAre you sure you want to remove {len(broken)} broken symlinks? [y/N]: ")
-                if confirm.lower() not in ["y", "yes"]:
-                    print("Symlink cleanup cancelled by user.")
-                    return
-
-            create_backup = not args.no_backup
-            print(f"\nExecuting symlink cleanup (Backup {'ENABLED' if create_backup else 'DISABLED'})...")
-            res, summary = cleaner.clean_items(broken, create_backup=create_backup, dry_run=False)
-            print(f"\n{summary}")
-            if res.backup_archive_path:
-                print(f"Safety Backup Archive: {res.backup_archive_path}")
-            return
-
-    # 6. Scan / Clean Orphan Configurations
-    elif args.scan or args.clean or args.dry_run:
-        print("\nScanning for leftover configurations and orphaned settings...")
-        items = scanner.scan_all()
         orphans = [i for i in items if i.status == "CONFIRMED_ORPHAN"]
         probable = [i for i in items if i.status == "PROBABLE_ORPHAN"]
 
-        total_orphan_bytes = sum(i.size_bytes for i in orphans)
-        size_mb = total_orphan_bytes / (1024 * 1024)
+        size_mb = 0.0
+        if is_symlinks_only:
+            table_rows = []
+            for it in orphans:
+                table_rows.append([it.name, it.path, it.reason, it.status])
 
-        table_rows = []
-        for it in orphans:
-            table_rows.append([it.name, it.category, it.formatted_size, it.formatted_date, it.status])
-
-        if table_rows:
-            print("\n" + format_table(table_rows, ["Name", "Category", "Size", "Modified", "Status"]))
-            print(f"\nDiscovered {len(orphans)} confirmed orphan items ({size_mb:.2f} MB reclaimable).")
-            if probable:
-                print(f"Discovered {len(probable)} probable orphans (review in GUI).")
+            if table_rows:
+                print("\n" + format_table(table_rows, ["Symlink", "Location", "Reason", "Status"]))
+                print(f"\nDiscovered {len(orphans)} broken symbolic link(s).")
+                if probable:
+                    print(f"Discovered {len(probable)} stale symlink(s) pointing to temporary paths.")
+            else:
+                print("\nNo broken or stale symbolic links found! Your system symlinks are clean.")
+                return
         else:
-            print("\nNo orphaned configurations found! Your system is clean.")
-            return
+            total_orphan_bytes = sum(i.size_bytes for i in orphans)
+            size_mb = total_orphan_bytes / (1024 * 1024)
+
+            table_rows = []
+            for it in orphans:
+                table_rows.append([it.name, it.category, it.formatted_size, it.formatted_date, it.status])
+
+            if table_rows:
+                print("\n" + format_table(table_rows, ["Name", "Category", "Size", "Modified", "Status"]))
+                print(f"\nDiscovered {len(orphans)} confirmed orphan items ({size_mb:.2f} MB reclaimable).")
+                if probable:
+                    print(f"Discovered {len(probable)} probable orphans (review in GUI).")
+            else:
+                print("\nNo orphaned configurations found! Your system is clean.")
+                return
 
         # If only scan requested without clean or dry_run
-        if args.scan and not (args.clean or args.dry_run):
+        if not (args.clean or args.dry_run):
+            cmd_hint = "--symlinks --clean" if is_symlinks_only else "--clean"
+            print(f"\nTo remove these items, run: python3 main.py {cmd_hint}")
             return
 
         is_dry_run = getattr(args, "dry_run", False) or (not getattr(args, "apply", False) if hasattr(args, "apply") else False)
@@ -462,10 +422,9 @@ def run_cli(
             return
 
         if args.clean:
+            item_desc = f"{len(orphans)} broken symlinks" if is_symlinks_only else f"{len(orphans)} items ({size_mb:.2f} MB)"
             if not args.force:
-                confirm = input(
-                    f"\nAre you sure you want to clean {len(orphans)} items ({size_mb:.2f} MB)? [y/N]: "
-                )
+                confirm = input(f"\nAre you sure you want to clean {item_desc}? [y/N]: ")
                 if confirm.lower() not in ["y", "yes"]:
                     print("Clean operation cancelled by user.")
                     return

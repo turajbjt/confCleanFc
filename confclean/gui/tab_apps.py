@@ -27,7 +27,7 @@ class AppConfigsTab(QWidget):
       2. Factory Reset (Installed Apps)
     """
 
-    status_changed = pyqtSignal(int, int)
+    status_changed = pyqtSignal()
 
     def __init__(
         self,

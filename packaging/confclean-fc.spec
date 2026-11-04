@@ -1,6 +1,6 @@
 Name:           confclean-fc
 Version:        1.1.4
-Release:        4%{?dist}
+Release:        5%{?dist}
 Summary:        Fedora & RPM system cleaner and orphan configuration purger
 
 License:        GPL-3.0-or-later
@@ -135,6 +135,9 @@ fi
 %{_datadir}/polkit-1/actions/io.github.confclean_fc.policy
 
 %changelog
+* Wed Nov 04 2026 James Turansky <turajb@gmail.com> - 1.1.4-5
+- Fix AppConfigsTab.status_changed signal signature (0 arguments) to prevent crash on startup scan
+
 * Wed Nov 04 2026 James Turansky <turajb@gmail.com> - 1.1.4-4
 - Make noarch RPM purely Python source and eliminate conflicting %pre scriptlet
 - Compile bytecode on target system in %post to match installed Python version

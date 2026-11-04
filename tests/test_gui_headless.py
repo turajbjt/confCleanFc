@@ -643,6 +643,45 @@ class TestGUIHeadless(unittest.TestCase):
         tab._purge_package_cache()
         self.mock_cache.clean_category.assert_called_once_with(cat1, dry_run=False)
 
+    def test_app_configs_tab_status_changed_signal(self):
+        from confclean.gui.tab_apps import AppConfigsTab
+        tab = AppConfigsTab(self.mock_scanner, self.mock_cleaner, self.mock_safety, self.mock_resetter)
+        signal_received = []
+        tab.status_changed.connect(lambda: signal_received.append(True))
+        # Trigger scanner tab status_changed
+        tab.tab_scanner.status_changed.emit()
+        self.assertEqual(len(signal_received), 1)
+
+        # Ensure MainWindow handles the signal correctly
+        win = MainWindow(
+            scanner=self.mock_scanner,
+            cleaner=self.mock_cleaner,
+            safety=self.mock_safety,
+            backup_mgr=self.mock_backup_mgr,
+            restore_mgr=self.mock_restore_mgr,
+            cache_cleaner=self.mock_cache,
+            pkg_mgr=self.mock_pkg,
+            app_resetter=self.mock_resetter,
+            auto_scan_on_nav=False,
+        )
+        items = [
+            ScanItem(
+                "/test/.config/orphan",
+                "orphan",
+                "config",
+                True,
+                1048576,
+                1,
+                10.0,
+                "CONFIRMED_ORPHAN",
+                "Orphan",
+                is_selected=True,
+            )
+        ]
+        win.tab_scanner.scanned_items = items
+        win.tab_apps.status_changed.emit()
+        self.assertIn("1 orphans", win.lbl_reclaimable.text())
+
 
 if __name__ == "__main__":
     unittest.main()

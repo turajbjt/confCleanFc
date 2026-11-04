@@ -27,7 +27,7 @@ from PyQt6.QtWidgets import (
 from confclean.core.cache_cleaner import CacheCleaner
 from confclean.core.package_manager import PackageManager, PackageSuggestion
 from confclean.core.selinux_manager import SELinuxManager
-from confclean.gui.workers import PackageRemovalWorker, PackageScanWorker
+from confclean.gui.workers import PackageRemovalWorker, PackageScanWorker, SELinuxWorker
 
 
 class PackageTab(QWidget):
@@ -46,6 +46,7 @@ class PackageTab(QWidget):
         self.suggestions: List[PackageSuggestion] = []
         self.worker: Optional[PackageScanWorker] = None
         self.removal_worker: Optional[PackageRemovalWorker] = None
+        self.selinux_worker: Optional[SELinuxWorker] = None
 
         self._init_ui()
         self._refresh_selinux_ui()
@@ -538,6 +539,9 @@ class PackageTab(QWidget):
 
     def _schedule_selinux_fix(self):
         """Schedules fixfiles -B onboot for next system startup."""
+        if hasattr(self, "selinux_worker") and self.selinux_worker and self.selinux_worker.isRunning():
+            return
+
         if not self.selinux_mgr.is_selinux_supported():
             QMessageBox.critical(
                 self,
@@ -558,16 +562,28 @@ class PackageTab(QWidget):
         if reply != QMessageBox.StandardButton.Yes:
             return
 
-        success, msg = self.selinux_mgr.schedule_onboot_fix(boottime_only=True, use_pkexec=True)
+        self.btn_fix_selinux.setEnabled(False)
+        self.btn_fix_selinux.setText("Waiting for authorization...")
+        if hasattr(self, "btn_cancel_selinux"):
+            self.btn_cancel_selinux.setEnabled(False)
+
+        self.selinux_worker = SELinuxWorker("schedule", self.selinux_mgr, self)
+        self.selinux_worker.finished.connect(self._on_selinux_schedule_finished)
+        self.selinux_worker.failed.connect(self._on_selinux_worker_failed)
+        self.selinux_worker.start()
+
+    def _on_selinux_schedule_finished(self, success: bool, msg: str):
+        self._refresh_selinux_ui()
         if success:
             QMessageBox.information(self, "SELinux Relabel Scheduled", msg)
-        else:
+        elif "cancelled" not in msg.lower():
             QMessageBox.critical(self, "SELinux Relabel Error", msg)
-
-        self._refresh_selinux_ui()
 
     def _cancel_selinux_fix(self):
         """Cancels a scheduled on-boot SELinux relabel."""
+        if hasattr(self, "selinux_worker") and self.selinux_worker and self.selinux_worker.isRunning():
+            return
+
         reply = QMessageBox.question(
             self,
             "Cancel SELinux Relabel",
@@ -577,10 +593,22 @@ class PackageTab(QWidget):
         if reply != QMessageBox.StandardButton.Yes:
             return
 
-        success, msg = self.selinux_mgr.cancel_onboot_fix(use_pkexec=True)
+        self.btn_fix_selinux.setEnabled(False)
+        self.btn_cancel_selinux.setEnabled(False)
+        self.btn_cancel_selinux.setText("Waiting for authorization...")
+
+        self.selinux_worker = SELinuxWorker("cancel", self.selinux_mgr, self)
+        self.selinux_worker.finished.connect(self._on_selinux_cancel_finished)
+        self.selinux_worker.failed.connect(self._on_selinux_worker_failed)
+        self.selinux_worker.start()
+
+    def _on_selinux_cancel_finished(self, success: bool, msg: str):
+        self._refresh_selinux_ui()
         if success:
             QMessageBox.information(self, "SELinux Relabel Cancelled", msg)
-        else:
+        elif "cancelled" not in msg.lower():
             QMessageBox.warning(self, "Error", msg)
 
+    def _on_selinux_worker_failed(self, err: str):
         self._refresh_selinux_ui()
+        QMessageBox.critical(self, "SELinux Error", f"Operation failed: {err}")

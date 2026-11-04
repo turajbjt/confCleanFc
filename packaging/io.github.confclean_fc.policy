@@ -15,4 +15,14 @@
     <annotate key="org.freedesktop.policykit.exec.path">/usr/bin/confclean-fc</annotate>
     <annotate key="org.freedesktop.policykit.exec.allow_gui">true</annotate>
   </action>
+  <action id="io.github.confclean_fc.fixfiles">
+    <description>Schedule SELinux on-boot relabel</description>
+    <message>Authentication is required to configure SELinux on-boot relabel</message>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/sbin/fixfiles</annotate>
+  </action>
 </policyconfig>

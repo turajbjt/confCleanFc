@@ -1,6 +1,6 @@
 Name:           confclean-fc
 Version:        1.1.4
-Release:        8%{?dist}
+Release:        9%{?dist}
 Summary:        Fedora & RPM system cleaner and orphan configuration purger
 
 License:        GPL-3.0-or-later
@@ -135,6 +135,12 @@ fi
 %{_datadir}/polkit-1/actions/io.github.confclean_fc.policy
 
 %changelog
+* Wed Nov 04 2026 James Turansky <turajb@gmail.com> - 1.1.4-9
+- Run SELinux schedule and cancel operations asynchronously in background QThread to keep GUI responsive
+- Fix window manager focus-stealing and authentication dialog interruption in GNOME/Wayland
+- Register fixfiles action in Polkit policy configuration
+- Increase pkexec authorization timeout to 180s and handle cancellation gracefully
+
 * Wed Nov 04 2026 James Turansky <turajb@gmail.com> - 1.1.4-8
 - Expand Factory Reset library to 30 desktop applications (Slack, Nextcloud, Cura, Android Studio, GitKraken, Picard, etc.)
 - Add detector mapping aliases for newly supported desktop applications

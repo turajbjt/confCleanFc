@@ -235,3 +235,28 @@ class PackageRemovalWorker(QThread):
             self.finished.emit(res.returncode, combined)
         except Exception as e:
             self.failed.emit(str(e))
+
+
+class SELinuxWorker(QThread):
+    """Worker for executing SELinux fix/cancel operations asynchronously without blocking GUI."""
+
+    finished = pyqtSignal(bool, str)  # success, message
+    failed = pyqtSignal(str)
+
+    def __init__(self, action: str, selinux_mgr, parent=None):
+        super().__init__(parent)
+        self.action = action  # "schedule" or "cancel"
+        self.selinux_mgr = selinux_mgr
+
+    def run(self):
+        try:
+            if self.action == "schedule":
+                success, msg = self.selinux_mgr.schedule_onboot_fix(boottime_only=True, use_pkexec=True)
+            elif self.action == "cancel":
+                success, msg = self.selinux_mgr.cancel_onboot_fix(use_pkexec=True)
+            else:
+                success, msg = False, f"Unknown action: {self.action}"
+            self.finished.emit(success, msg)
+        except Exception as e:
+            self.failed.emit(str(e))
+

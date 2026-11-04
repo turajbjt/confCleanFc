@@ -143,7 +143,8 @@ class SELinuxManager:
 
     def get_cancel_command(self, use_pkexec: bool = False, use_sudo: bool = False) -> List[str]:
         """Builds command arguments to remove /.autorelabel and cancel scheduled relabel."""
-        cmd = ["rm", "-f", self.AUTORELABEL_PATH]
+        rm_bin = shutil.which("rm") or "/bin/rm"
+        cmd = [rm_bin, "-f", self.AUTORELABEL_PATH]
         if self.is_root:
             return cmd
 
@@ -191,7 +192,7 @@ class SELinuxManager:
                 capture_output=True,
                 text=True,
                 check=False,
-                timeout=30,
+                timeout=180 if use_pkexec else 30,
             )
 
             # Check if command succeeded or /.autorelabel was created
@@ -206,14 +207,18 @@ class SELinuxManager:
                     f"Status: SUCCESS | Note: fixfiles -B onboot"
                 )
                 return True, msg
+            elif res.returncode in (126, 127):
+                return False, "Authorization cancelled by user."
             else:
                 err = res.stderr.strip() or res.stdout.strip() or f"Process exited with code {res.returncode}"
+                if "cancelled" in err.lower() or "not authorized" in err.lower():
+                    return False, "Authorization cancelled by user."
                 msg = f"Failed to schedule SELinux relabel: {err}"
                 self.logger.error(msg)
                 return False, msg
 
         except subprocess.TimeoutExpired:
-            msg = "Timed out waiting for fixfiles command."
+            msg = "Timed out waiting for authorization."
             self.logger.error(msg)
             return False, msg
         except Exception as e:
@@ -243,14 +248,26 @@ class SELinuxManager:
 
         cmd = self.get_cancel_command(use_pkexec=use_pkexec, use_sudo=use_sudo)
         try:
-            res = subprocess.run(cmd, capture_output=True, text=True, check=False, timeout=15)
+            res = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=180 if use_pkexec else 15,
+            )
             if res.returncode == 0 or not self.is_autorelabel_scheduled():
                 self.logger.info(
                     f"AUDIT | Action: SELINUX_ONBOOT_CANCELLED | Target: '{self.AUTORELABEL_PATH}' | Status: SUCCESS"
                 )
                 return True, "Cancelled on-boot SELinux relabel (removed /.autorelabel)."
+            elif res.returncode in (126, 127):
+                return False, "Authorization cancelled by user."
             else:
                 err = res.stderr.strip() or f"Exit code {res.returncode}"
+                if "cancelled" in err.lower() or "not authorized" in err.lower():
+                    return False, "Authorization cancelled by user."
                 return False, f"Failed to cancel on-boot relabel: {err}"
+        except subprocess.TimeoutExpired:
+            return False, "Timed out waiting for authorization."
         except Exception as e:
             return False, f"Error cancelling on-boot relabel: {e}"

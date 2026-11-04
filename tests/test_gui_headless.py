@@ -654,11 +654,15 @@ class TestGUIHeadless(unittest.TestCase):
         self.mock_quest.return_value = QMessageBox.StandardButton.Yes
         mock_selinux.schedule_onboot_fix.return_value = (True, "Scheduled on boot")
         tab._schedule_selinux_fix()
+        if tab.selinux_worker:
+            tab.selinux_worker.wait()
         mock_selinux.schedule_onboot_fix.assert_called_once_with(boottime_only=True, use_pkexec=True)
 
         # Test cancel fix
         mock_selinux.cancel_onboot_fix.return_value = (True, "Cancelled")
         tab._cancel_selinux_fix()
+        if tab.selinux_worker:
+            tab.selinux_worker.wait()
         mock_selinux.cancel_onboot_fix.assert_called_once_with(use_pkexec=True)
 
         # Test DNF cache purge from package tab

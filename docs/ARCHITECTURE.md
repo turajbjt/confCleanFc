@@ -23,8 +23,12 @@ flowchart TD
         CleanWorker["CleanWorker"]
         CacheCleanWorker["CacheCleanWorker"]
         PackageScanWorker["PackageScanWorker"]
+        PackageRemovalWorker["PackageRemovalWorker"]
+        SELinuxWorker["SELinuxWorker"]
         AppResetWorker["AppResetWorker"]
         RestoreWorker["RestoreWorker"]
+        BackupListWorker["BackupListWorker"]
+        ArchiveInspectWorker["ArchiveInspectWorker"]
     end
 
     subgraph Core ["Core Engine (confclean.core)"]
@@ -150,15 +154,35 @@ The **Restore Engine** supports:
 * **Single-Authentication Privilege Batching**: When multiple packages require root privileges across DNF and Snap, `get_removal_command` coalesces commands into a single compound execution (e.g., `pkexec bash -c "cmd1 && cmd2"`) so the user enters their administrator password only once per batch operation.
 
 ### 6. Application Factory Resetter (`confclean.core.app_resetter.AppResetter`)
-Allows wiping accumulated caches, broken preferences, and local cookies to return applications (e.g., Firefox, Chrome, VS Code, LibreOffice, GIMP, VLC, Flatpaks) to fresh-install defaults.
-* **Automatic Pre-Reset Archive**: A dedicated backup is automatically archived before wiping the target application folders.
-* **Selective Reset**: Wipes config/cache without removing application binaries or document files.
+Allows wiping accumulated caches, broken preferences, and local cookies to return applications to fresh-install defaults:
+* **Curated Profile Library (30 Applications)**: Built-in target definitions for major desktop tools:
+  * Web Browsers: Firefox, Google Chrome, Chromium, Brave, Microsoft Edge
+  * Communication & Productivity: Thunderbird, LibreOffice, Slack, Zoom, Telegram, Nextcloud
+  * Development & System: VS Code, GitKraken, Android Studio, Virt-Manager, FileZilla
+  * Media & Creative: GIMP, Inkscape, VLC, Spotify, Audacity, OBS Studio, Krita, MusicBrainz Picard, Brasero
+  * 3D & CAD: Ultimaker Cura, OpenSCAD
+  * Gaming: Steam, Lutris, Heroic Games Launcher
+* **Flatpak Discovery**: Dynamically scans installed Flatpaks and generates sandboxed reset profiles targeting `~/.var/app/<app-id>`.
+* **Automatic Pre-Reset Archive**: A dedicated `.tar.gz` backup archive is automatically created before wiping any target folder.
+* **Selective Reset**: Wipes configuration and cache directories without removing binaries, documents, or library dependencies.
+
+### 7. SELinux & Security Context Integrity (`confclean.core.selinux_manager.SELinuxManager`)
+* **SELinux Status Inspection**: Queries system SELinux status (`sestatus`, `/sys/fs/selinux`) and checks whether an on-boot relabeling flag (`/.autorelabel`) is currently scheduled.
+* **On-Boot Context Relabeling**: Generates and executes `/usr/sbin/fixfiles -B onboot`, restoring correct security context labels across all filesystem objects on the subsequent system reboot.
+* **Non-Destructive Cancellation**: Safely cancels scheduled relabels by removing `/.autorelabel` via `pkexec /usr/bin/rm -f /.autorelabel`.
+* **Asynchronous Execution**: Polkit elevation commands execute in background threads, keeping the Qt main event loop responsive and eliminating focus-stealing issues in GNOME Wayland.
+
+### 8. Wayland & Desktop Integration
+* **Desktop Application Mapping**: In GNOME Wayland, compositors associate application windows with their launcher icon using the Wayland `app_id`. ConfClean FC explicitly sets `app.setDesktopFileName("confclean-fc")` and `app.setApplicationName("confclean-fc")` matching `confclean-fc.desktop`.
+* **Window Class Identification**: The launcher declares `StartupWMClass=confclean-fc` ensuring consistent window grouping and taskbar icon assignment across Wayland (Mutter, KWin) and X11/XWayland.
+* **Multi-Resolution Raster Icons**: Scalable SVG icons (`assets/icon.svg`) are complemented by a complete standard raster icon set (`assets/icons/<size>x<size>/confclean-fc.png` across 16x16, 24x24, 32x32, 48x48, 64x64, 128x128, 256x256, and 512x512) installed into `/usr/share/icons/hicolor/`.
+* **Automatic Icon Cache Refresh**: RPM `%post`, `%postun`, and `%posttrans` scriptlets invoke `gtk-update-icon-cache` and `update-desktop-database` to ensure immediate visual updates in GNOME Shell without requiring user logout or reboot.
 
 ---
 
 ## 🧵 PyQt6 GUI Multi-Threading Model
 
-All disk-intensive and scanning operations run in separate background `QThread` workers to maintain smooth 60 FPS UI responsiveness:
+All disk-intensive, scanning, and privileged operations run in separate background `QThread` workers to maintain smooth 60 FPS UI responsiveness:
 
 ```mermaid
 sequenceDiagram
@@ -183,9 +207,13 @@ sequenceDiagram
 ```
 
 ### Worker Classes in `confclean.gui.workers`:
-1. `ScanWorker`: Executes `ConfigScanner.scan_all()` in the background.
-2. `CleanWorker`: Executes `SafeCleaner.clean_items()`.
-3. `CacheCleanWorker`: Executes `CacheCleaner.clean_category()`.
-4. `PackageScanWorker`: Executes `PackageManager.scan_all_suggestions()`.
-5. `AppResetWorker`: Executes `AppResetter.reset_app()`.
-6. `RestoreWorker`: Executes `RestoreManager.restore()`.
+1. `ScanWorker`: Executes `ConfigScanner.scan_all()` in the background with progressive file-by-file status signals.
+2. `CleanWorker`: Executes `SafeCleaner.clean_items()` with pre-deletion backup and atomic directory removal.
+3. `CacheCleanWorker`: Executes `CacheCleaner.clean_category()` for user caches, journals, and package caches.
+4. `PackageScanWorker`: Executes `PackageManager.scan_all_suggestions()` across DNF, Flatpak, and Snap.
+5. `PackageRemovalWorker`: Asynchronously executes batch package removal commands without freezing the GUI.
+6. `SELinuxWorker`: Asynchronously handles Polkit-elevated `/usr/sbin/fixfiles -B onboot` scheduling and cancellation without interrupting user typing focus.
+7. `AppResetWorker`: Executes `AppResetter.reset_app()` with mandatory pre-reset backup archiving.
+8. `RestoreWorker`: Executes `RestoreManager.restore()` for whole or selective item restoration.
+9. `BackupListWorker`: Asynchronously scans and parses `~/.local/share/confclean-fc/backups/` archives.
+10. `ArchiveInspectWorker`: Asynchronously inspects the embedded `manifest.json` and contents of a specific backup archive.

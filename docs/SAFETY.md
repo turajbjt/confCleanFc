@@ -60,16 +60,14 @@ When operating in root mode, ConfClean FC strictly blocks modification of system
 ## 🎯 Layer 2: Custom User Whitelist
 
 Users can define their own permanent protection rules via:
-1. **The GUI Settings Tab**: Add exact folder names or substring keywords to the Whitelist list.
-2. **The JSON Configuration File**: Located at `~/.config/confclean-fc/whitelist.json`.
+1. **The GUI Settings & Safelist Tab**: Add exact folder names or substring keywords to the Whitelist list (changes take effect immediately and auto-refresh dynamically across all tabs).
+2. **The JSON Configuration File**: Located at `~/.config/confclean-fc/custom_whitelist.json`.
 
 ```json
-{
-  "whitelist": [
-    "my_custom_tool",
-    "project_alpha_settings"
-  ]
-}
+[
+  "my_custom_tool",
+  "project_alpha_settings"
+]
 ```
 
 Any item matching a custom whitelist entry is displayed in the GUI with a greyed-out checkbox and marked `PROTECTED (User Whitelist)`.
@@ -122,6 +120,7 @@ RPM-based systems (like Fedora) regularly install newer Linux kernels while main
 
 ## 🛡️ Layer 7: Privilege Separation & Polkit
 
-* Regular configuration cleaning (`~/.config`, `~/.local/share`, `~/.var/app`) runs unprivileged with normal user permissions.
-* System cleaning (`/var/cache/dnf`, `journalctl`, `/etc/*.rpmsave`) requires root privileges.
-* When elevated actions are initiated from the GUI without root permissions, ConfClean FC invokes `pkexec` (Polkit) for standard authenticated privilege escalation.
+* **User Space Isolation**: Regular configuration cleaning (`~/.config`, `~/.local/share`, `~/.var/app`) runs strictly unprivileged with normal user permissions, completely isolated from system files.
+* **Privileged System Maintenance**: System cleaning (`/var/cache/dnf`, `journalctl`, `/etc/*.rpmsave`) and on-boot SELinux relabeling require root privileges.
+* **Asynchronous Polkit Escalation (`pkexec`)**: When elevated actions are initiated from the GUI without root permissions, ConfClean FC invokes `pkexec` asynchronously inside dedicated background `QThread` workers. This prevents main Qt event loop stalls, avoiding window manager ping timeouts (`_NET_WM_PING`) in Wayland/GNOME that would otherwise steal keyboard focus away from Polkit password prompts.
+* **SELinux Re-label Safety**: Scheduling an SELinux relabel invokes standard `/usr/sbin/fixfiles -B onboot` creating `/.autorelabel`. ConfClean FC can safely cancel the scheduled relabel at any time by removing `/.autorelabel` via `pkexec /usr/bin/rm -f /.autorelabel` without modifying or compromising active SELinux policy rules.

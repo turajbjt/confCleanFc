@@ -187,7 +187,7 @@ Schedule file context repair on next boot via `fixfiles -B onboot` (elevates via
 | :--- | :--- |
 | `~/.local/share/confclean-fc/backups/` | Storage directory for pre-deletion `.tar.gz` backup archives and companion `.log` files. |
 | `~/.local/share/confclean-fc/logs/audit.log` | Persistent append-only audit log recording every scan, clean, reset, and restore event. |
-| `~/.config/confclean-fc/whitelist.json` | User-defined custom protection whitelist. |
+| `~/.config/confclean-fc/custom_whitelist.json` | User-defined custom protection whitelist. |
 
 ---
 

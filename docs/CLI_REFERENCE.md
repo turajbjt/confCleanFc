@@ -40,7 +40,10 @@ When run without flags in a graphical desktop session (Wayland or X11), ConfClea
 | :--- | :--- |
 | `--cache` | Scan cleanable application caches, thumbnails, trash, and system temporary files. When combined with `--clean`, purges them. |
 | `--packages` | Scan DNF, RPM, Flatpak, and Snap for unneeded dependencies, redundant kernels, unused runtimes, and disabled revisions. |
+| `--retired` | Scan and remove retired or repository-orphaned RPM packages (extras no longer present in any active repo). |
 | `--symlinks` | Scan and clean broken or stale symbolic links across user and system directories. |
+| `--selinux-fix-boot` | Schedule SELinux policy and file context relabel on next boot (`sudo fixfiles -B onboot`). Alias: `--fix-selinux`. |
+| `--selinux-status` | Display current SELinux enforcement mode, policy, and next-boot autorelabel schedule. |
 | `--diff <FILE>` | View a syntax-highlighted unified diff between an RPM template (`.rpmnew` or `.rpmsave`) and its active configuration file. |
 | `--restore [ID]` | List available backup archives (if no ID specified) or restore files from a specific backup ID or path. |
 | `--reset-app <APP>` | Reset an application's settings to factory defaults with automatic backup (**Dry run by default** unless `--apply`). |
@@ -139,6 +142,33 @@ Commit the factory reset (creates a pre-reset backup before wiping):
 Compare an incoming RPM upgrade template against the existing live configuration file:
 ```bash
 ./main.py --diff /etc/cups/cupsd.conf.rpmnew
+```
+
+### 10. Scan and Remove Retired Packages (Repo Extras)
+Scan installed packages that are no longer available in any active repository:
+```bash
+./main.py --retired
+```
+
+Simulate removal (dry run by default):
+```bash
+./main.py --retired --clean
+```
+
+Execute removal of retired packages:
+```bash
+./main.py --retired --clean --apply
+```
+
+### 11. Schedule SELinux Policy & File Context Fix on Next Boot
+Check whether SELinux is active and if a relabel is scheduled:
+```bash
+./main.py --selinux-status
+```
+
+Schedule file context repair on next boot via `fixfiles -B onboot` (elevates via `sudo`):
+```bash
+./main.py --selinux-fix-boot
 ```
 
 ---

@@ -31,6 +31,10 @@ Examples:
   python3 main.py --reset-app firefox # Reset app settings with automatic backup
   python3 main.py --symlinks          # Scan for broken and stale symlinks
   python3 main.py --symlinks --clean  # Clean broken symlinks (dry run by default)
+  python3 main.py --retired           # Scan for retired / orphaned repo packages
+  python3 main.py --retired --clean   # Remove retired packages (dry run by default)
+  python3 main.py --selinux-fix-boot  # Schedule SELinux file context fix on next boot
+  python3 main.py --selinux-status    # Check SELinux status & next-boot relabeling
         """,
     )
 
@@ -42,8 +46,11 @@ Examples:
     parser.add_argument("--apply", "--no-dry-run", action="store_true", dest="apply", help="Execute actual deletion/changes (disables dry run)")
     parser.add_argument("--no-backup", action="store_true", help="Skip creating backup archive before cleaning")
     parser.add_argument("--cache", action="store_true", help="Scan or clean application and system cache")
-    parser.add_argument("--packages", action="store_true", help="Scan for unneeded RPM packages and old kernels")
+    parser.add_argument("--packages", action="store_true", help="Scan for unneeded RPM packages, retired packages, and old kernels")
+    parser.add_argument("--retired", action="store_true", help="Scan and clean retired / repository-orphaned packages (repo extras)")
     parser.add_argument("--symlinks", action="store_true", help="Scan and clean broken or stale symlinks in user and system directories")
+    parser.add_argument("--selinux-fix-boot", "--fix-selinux", "--selinux", action="store_true", dest="selinux_fix_boot", help="Schedule SELinux policy and file context relabel on next boot (sudo fixfiles -B onboot)")
+    parser.add_argument("--selinux-status", action="store_true", help="Display SELinux status and next-boot relabeling schedule")
     parser.add_argument("--restore", nargs="?", const="list", help="List or restore pre-clean backup archives")
     parser.add_argument("--reset-app", metavar="APP", help="Reset an application to factory install defaults (dry run by default unless --apply)")
     parser.add_argument("--diff", metavar="FILE", help="View unified diff between an .rpmnew or .rpmsave file and the active system config")
@@ -52,7 +59,20 @@ Examples:
     args = parser.parse_args()
 
     # Determine execution mode: CLI or GUI
-    cli_flags = [args.scan, args.clean, args.dry_run, args.cache, args.packages, args.symlinks, (args.restore is not None), bool(args.reset_app), bool(args.diff)]
+    cli_flags = [
+        args.scan,
+        args.clean,
+        args.dry_run,
+        args.cache,
+        args.packages,
+        args.retired,
+        args.symlinks,
+        args.selinux_fix_boot,
+        args.selinux_status,
+        (args.restore is not None),
+        bool(args.reset_app),
+        bool(args.diff),
+    ]
     is_cli_requested = any(cli_flags)
 
     if is_cli_requested and not args.gui:

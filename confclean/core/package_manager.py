@@ -94,32 +94,37 @@ class PackageManager:
         suggestions: List[PackageSuggestion] = []
 
         if progress_callback:
-            progress_callback("Scanning for unneeded dependencies...", 1, 6)
+            progress_callback("Scanning for unneeded dependencies...", 1, 7)
         unneeded = self._get_unneeded_packages()
         suggestions.extend(unneeded)
 
         if progress_callback:
-            progress_callback("Scanning for old kernel packages...", 2, 6)
+            progress_callback("Scanning for old kernel packages...", 2, 7)
         old_kernels = self._get_old_kernels()
         suggestions.extend(old_kernels)
 
         if progress_callback:
-            progress_callback("Scanning for duplicate package versions...", 3, 6)
+            progress_callback("Scanning for duplicate package versions...", 3, 7)
         duplicates = self._get_duplicate_packages()
         suggestions.extend(duplicates)
 
         if progress_callback:
-            progress_callback("Scanning for unused Flatpak runtimes...", 4, 6)
+            progress_callback("Scanning for retired / repo-orphan packages...", 4, 7)
+        repo_orphans = self._get_repo_orphans()
+        suggestions.extend(repo_orphans)
+
+        if progress_callback:
+            progress_callback("Scanning for unused Flatpak runtimes...", 5, 7)
         flatpaks = self._get_unused_flatpaks()
         suggestions.extend(flatpaks)
 
         if progress_callback:
-            progress_callback("Scanning for disabled Snap revisions...", 5, 6)
+            progress_callback("Scanning for disabled Snap revisions...", 6, 7)
         snaps = self._get_unused_snaps()
         suggestions.extend(snaps)
 
         if progress_callback:
-            progress_callback("Scanning complete.", 6, 6)
+            progress_callback("Scanning complete.", 7, 7)
 
         return suggestions
 
@@ -563,6 +568,126 @@ class PackageManager:
 
         return results
 
+    def _get_repo_orphans(self) -> List[PackageSuggestion]:
+        """
+        Queries dnf repoquery --extras to identify installed packages that are
+        no longer available in any active or enabled repository (retired packages / extras).
+        """
+        results: List[PackageSuggestion] = []
+        if self.dnf_bin not in ["dnf5", "dnf"]:
+            return results
+
+        CORE_PROTECTED = {
+            "confclean-fc",
+            "confclean",
+            "glibc",
+            "systemd",
+            "kernel",
+            "kernel-core",
+            "rpm",
+            "dnf",
+            "dnf5",
+            "setup",
+            "basesystem",
+            "filesystem",
+            "bash",
+            "coreutils",
+            "selinux-policy",
+        }
+
+        # Try cache-only mode (-C) first for fast execution without network roundtrips
+        cmd_cache = [self.dnf_bin, "repoquery", "-C", "--extras"]
+        cmd_live = [self.dnf_bin, "repoquery", "--extras"]
+
+        env = os.environ.copy()
+        if "HOME" not in env or not os.access(env["HOME"], os.W_OK):
+            env["HOME"] = "/tmp"
+        if "XDG_STATE_HOME" not in env or not os.access(env["XDG_STATE_HOME"], os.W_OK):
+            env["XDG_STATE_HOME"] = "/tmp"
+        if "XDG_CACHE_HOME" not in env or not os.access(env["XDG_CACHE_HOME"], os.W_OK):
+            env["XDG_CACHE_HOME"] = "/tmp"
+
+        res = None
+        try:
+            res = subprocess.run(cmd_cache, capture_output=True, text=True, check=False, timeout=30, env=env)
+        except Exception:
+            pass
+
+        if not res or res.returncode != 0 or not res.stdout.strip():
+            try:
+                res = subprocess.run(cmd_live, capture_output=True, text=True, check=False, timeout=30, env=env)
+            except Exception as e:
+                self.logger.warning(f"Error querying retired packages via DNF: {e}")
+                return results
+
+        if res and res.returncode == 0 and res.stdout.strip():
+            pkg_map = self._get_rpm_info_map()
+            for line in res.stdout.splitlines():
+                raw = line.strip()
+                if not raw or "Repositories loaded" in raw or raw.startswith("Updating"):
+                    continue
+
+                clean = re.sub(r"-(\d+):", "-", raw)
+                info = pkg_map.get(raw.lower()) or pkg_map.get(clean.lower())
+
+                if info:
+                    pname = info["name"]
+                    pver = info["version"]
+                    prel = info["release"]
+                    parch = info["arch"]
+                    psize = info["size"]
+                    psummary = info["summary"]
+                else:
+                    m_pkg = re.match(r"^(.+?)-([0-9][^-]*)-([0-9].*)\.([^.]+)$", clean)
+                    if m_pkg:
+                        pname, pver, prel, parch = m_pkg.groups()
+                    else:
+                        pname = re.split(r"-\d", raw.split("-0:")[0])[0]
+                        pver = "installed"
+                        prel = ""
+                        parch = "x86_64"
+                    psize = 0
+                    psummary = "Retired package (repo extra)"
+
+                # Safety checks
+                pname_lower = pname.lower()
+                is_confclean = pname_lower in ("confclean-fc", "confclean")
+                is_core = pname_lower in CORE_PROTECTED or pname_lower.startswith("kernel-core")
+
+                if is_confclean:
+                    is_protected = True
+                    is_selected = False
+                    reason = "PROTECTED: ConfClean FC core application"
+                elif is_core:
+                    is_protected = True
+                    is_selected = False
+                    reason = f"PROTECTED: Core system package ({pname})"
+                else:
+                    is_protected = False
+                    is_selected = True
+                    reason = "Retired package no longer available in any enabled repository (repo orphan / extra)"
+
+                results.append(
+                    PackageSuggestion(
+                        name=pname,
+                        version=pver,
+                        release=prel,
+                        arch=parch,
+                        size_bytes=psize,
+                        summary=psummary,
+                        category="repo_orphan",
+                        reason=reason,
+                        is_protected=is_protected,
+                        is_selected=is_selected,
+                    )
+                )
+
+        return results
+
+    def scan_retired_packages(self) -> List[PackageSuggestion]:
+        """Convenience method returning solely retired / repository-orphaned packages."""
+        return self._get_repo_orphans()
+
     def get_removal_commands(self, packages: List[PackageSuggestion]) -> List[List[str]]:
         """Returns the list of individual raw CLI commands to remove selected packages/runtimes."""
         active_pkgs = [p for p in packages if not p.is_protected and p.is_selected]
@@ -572,7 +697,10 @@ class PackageManager:
         commands: List[List[str]] = []
 
         # 1. RPM/DNF Packages
-        dnf_targets = [p.removal_spec for p in active_pkgs if p.category in ("unneeded_dep", "old_kernel", "duplicate")]
+        dnf_targets = [
+            p.removal_spec for p in active_pkgs
+            if p.category in ("unneeded_dep", "old_kernel", "duplicate", "repo_orphan")
+        ]
         if dnf_targets:
             commands.append([self.dnf_bin, "remove", "-y"] + dnf_targets)
 

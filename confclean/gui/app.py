@@ -32,6 +32,7 @@ from confclean.core.package_manager import PackageManager
 from confclean.core.restore_manager import RestoreManager
 from confclean.core.safelist import SafetyEngine
 from confclean.core.scanner import ConfigScanner
+from confclean.core.selinux_manager import SELinuxManager
 from confclean.gui.styles import ADWAITA_DARK_STYLE
 from confclean.gui.tab_app_reset import AppResetTab
 from confclean.gui.tab_cache import CacheTab
@@ -55,6 +56,7 @@ class MainWindow(QMainWindow):
         cache_cleaner: CacheCleaner = None,
         pkg_mgr: PackageManager = None,
         app_resetter: AppResetter = None,
+        selinux_mgr: SELinuxManager = None,
         auto_scan_on_nav: bool = True,
     ):
         super().__init__()
@@ -86,6 +88,7 @@ class MainWindow(QMainWindow):
         self.scanner = scanner or ConfigScanner(detector=self.detector, safety=self.safety)
         self.cache_cleaner = cache_cleaner or CacheCleaner(safety=self.safety)
         self.pkg_mgr = pkg_mgr or PackageManager()
+        self.selinux_mgr = selinux_mgr or SELinuxManager()
         self.app_resetter = app_resetter or AppResetter(
             detector=self.detector,
             backup_mgr=self.backup_mgr,
@@ -206,7 +209,7 @@ class MainWindow(QMainWindow):
         self.stack.addWidget(self.tab_logs)
 
         # 7. Settings Tab
-        self.tab_settings = SettingsTab(self.safety)
+        self.tab_settings = SettingsTab(self.safety, selinux_mgr=self.selinux_mgr)
         self.stack.addWidget(self.tab_settings)
 
         body_layout.addWidget(self.stack, stretch=1)

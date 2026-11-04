@@ -13,6 +13,7 @@ Requires:       python3 >= 3.9
 Requires:       python3-pyqt6
 Recommends:     python3-rpm
 Recommends:     flatpak
+Recommends:     policycoreutils
 
 # Helper overrides for building in standalone environments
 %define __os_install_post %{nil}

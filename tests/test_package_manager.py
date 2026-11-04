@@ -197,12 +197,13 @@ class TestPackageManager(unittest.TestCase):
         with patch.object(self.mgr, "_get_unneeded_packages", return_value=[]):
             with patch.object(self.mgr, "_get_old_kernels", return_value=[]):
                 with patch.object(self.mgr, "_get_duplicate_packages", return_value=[]):
-                    with patch.object(self.mgr, "_get_unused_flatpaks", return_value=[]):
-                        with patch.object(self.mgr, "_get_unused_snaps", return_value=[]):
-                            res = self.mgr.scan_all_suggestions(progress_callback=callback)
+                    with patch.object(self.mgr, "_get_repo_orphans", return_value=[]):
+                        with patch.object(self.mgr, "_get_unused_flatpaks", return_value=[]):
+                            with patch.object(self.mgr, "_get_unused_snaps", return_value=[]):
+                                res = self.mgr.scan_all_suggestions(progress_callback=callback)
 
         self.assertEqual(len(res), 0)
-        self.assertEqual(len(progress_calls), 6)
+        self.assertEqual(len(progress_calls), 7)
 
     def test_flatpak_unused_graceful_missing(self):
         with patch("shutil.which", return_value=None):
@@ -339,6 +340,47 @@ class TestPackageManager(unittest.TestCase):
         self.assertIn("testpkg-1.0.0-1.fc44.x86_64", pkg_map)
         self.assertEqual(pkg_map["testpkg"]["size"], 1048576)
         self.assertEqual(pkg_map["testpkg"]["summary"], "A test package")
+
+    @patch("subprocess.run")
+    def test_get_repo_orphans_and_confclean_protection(self, mock_run):
+        mock_proc = MagicMock()
+        mock_proc.returncode = 0
+        mock_proc.stdout = (
+            "confclean-fc-0:1.1.4-2.fc44.noarch\n"
+            "old-tool-0:1.0.0-1.fc44.x86_64\n"
+            "glibc-0:2.40-1.fc44.x86_64\n"
+        )
+        mock_run.return_value = mock_proc
+
+        with patch.object(self.mgr, "_get_rpm_info_map", return_value={
+            "confclean-fc": {"name": "confclean-fc", "version": "1.1.4", "release": "2.fc44", "arch": "noarch", "size": 500000, "summary": "ConfClean FC app"},
+            "old-tool": {"name": "old-tool", "version": "1.0.0", "release": "1.fc44", "arch": "x86_64", "size": 2048, "summary": "An old retired tool"},
+            "glibc": {"name": "glibc", "version": "2.40", "release": "1.fc44", "arch": "x86_64", "size": 15000000, "summary": "GNU C Library"},
+        }):
+            orphans = self.mgr.scan_retired_packages()
+            self.assertEqual(len(orphans), 3)
+
+            confclean_pkg = next(o for o in orphans if o.name == "confclean-fc")
+            self.assertTrue(confclean_pkg.is_protected)
+            self.assertFalse(confclean_pkg.is_selected)
+            self.assertIn("ConfClean FC core application", confclean_pkg.reason)
+
+            glibc_pkg = next(o for o in orphans if o.name == "glibc")
+            self.assertTrue(glibc_pkg.is_protected)
+            self.assertFalse(glibc_pkg.is_selected)
+            self.assertIn("Core system package", glibc_pkg.reason)
+
+            tool_pkg = next(o for o in orphans if o.name == "old-tool")
+            self.assertFalse(tool_pkg.is_protected)
+            self.assertTrue(tool_pkg.is_selected)
+            self.assertEqual(tool_pkg.category, "repo_orphan")
+
+            # Removal commands must include old-tool but NEVER confclean-fc or glibc
+            cmds = self.mgr.get_removal_commands(orphans)
+            self.assertEqual(len(cmds), 1)
+            self.assertIn("old-tool", cmds[0])
+            self.assertNotIn("confclean-fc", cmds[0])
+            self.assertNotIn("glibc", cmds[0])
 
 
 if __name__ == "__main__":

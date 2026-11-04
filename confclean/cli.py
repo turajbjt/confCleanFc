@@ -17,6 +17,7 @@ from confclean.core.package_manager import PackageManager
 from confclean.core.restore_manager import RestoreManager
 from confclean.core.safelist import SafetyEngine
 from confclean.core.scanner import ConfigScanner, get_rpm_diff
+from confclean.core.selinux_manager import SELinuxManager
 
 
 def format_table(rows: List[List[str]], headers: List[str]) -> str:
@@ -41,13 +42,47 @@ def run_cli(
     cleaner: SafeCleaner = None,
     safety: SafetyEngine = None,
     backup_mgr: BackupManager = None,
+    pkg_mgr: PackageManager = None,
+    selinux_mgr: SELinuxManager = None,
 ):
     """Executes the CLI commands."""
     logger = get_logger()
-    safety = safety or SafetyEngine()
-    backup_mgr = backup_mgr or BackupManager()
-    cleaner = cleaner or SafeCleaner(safety=safety, backup_mgr=backup_mgr)
-    scanner = scanner or ConfigScanner(safety=safety)
+
+    def get_safety():
+        nonlocal safety
+        if safety is None:
+            safety = SafetyEngine()
+        return safety
+
+    def get_backup_mgr():
+        nonlocal backup_mgr
+        if backup_mgr is None:
+            backup_mgr = BackupManager()
+        return backup_mgr
+
+    def get_cleaner():
+        nonlocal cleaner
+        if cleaner is None:
+            cleaner = SafeCleaner(safety=get_safety(), backup_mgr=get_backup_mgr())
+        return cleaner
+
+    def get_scanner():
+        nonlocal scanner
+        if scanner is None:
+            scanner = ConfigScanner(safety=get_safety())
+        return scanner
+
+    def get_pkg_mgr():
+        nonlocal pkg_mgr
+        if pkg_mgr is None:
+            pkg_mgr = PackageManager()
+        return pkg_mgr
+
+    def get_selinux_mgr():
+        nonlocal selinux_mgr
+        if selinux_mgr is None:
+            selinux_mgr = SELinuxManager()
+        return selinux_mgr
 
     # Diff View for .rpmnew / .rpmsave
     if getattr(args, "diff", None):
@@ -76,7 +111,7 @@ def run_cli(
 
     # 1. Cache Cleaning
     if args.cache:
-        cache_cleaner = CacheCleaner(safety=safety)
+        cache_cleaner = CacheCleaner(safety=get_safety())
         categories = cache_cleaner.scan_categories()
         table_rows = []
         for cat in categories:
@@ -111,9 +146,9 @@ def run_cli(
 
     # 2. Package Management
     elif args.packages:
-        pkg_mgr = PackageManager()
-        print("\nQuerying DNF / RPM for unneeded packages and old kernels...")
-        suggs = pkg_mgr.scan_all_suggestions()
+        pkg_mgr_inst = get_pkg_mgr()
+        print("\nQuerying DNF / RPM for unneeded packages, retired packages, and old kernels...")
+        suggs = pkg_mgr_inst.scan_all_suggestions()
         if not suggs:
             print("No unneeded packages or removable kernels found.")
             return
@@ -124,9 +159,142 @@ def run_cli(
 
         print("\n" + format_table(table_rows, ["Package", "Version", "Size", "Category", "Protected"]))
         removable = [s for s in suggs if not s.is_protected and s.is_selected]
-        if removable:
-            cmd = pkg_mgr.get_removal_command(removable)
-            print(f"\nSuggested Removal Command:\n  {' '.join(cmd)}")
+
+        if not (args.clean or args.dry_run):
+            if removable:
+                cmd = pkg_mgr_inst.get_removal_command(removable)
+                print(f"\nSuggested Removal Command:\n  {' '.join(cmd)}")
+                print("\nTo remove these packages, run: python3 main.py --packages --clean")
+            return
+
+        if not removable:
+            print("\nNo removable packages selected (all detected items are protected).")
+            return
+
+        cmd = pkg_mgr_inst.get_removal_command(removable)
+        is_dry_run = getattr(args, "dry_run", False) or (not getattr(args, "apply", False) if hasattr(args, "apply") else False)
+
+        if is_dry_run:
+            print(f"\n[DRY RUN] Would execute package removal for {len(removable)} package(s):")
+            print(f"Command: {' '.join(cmd)}")
+            print("[DRY RUN MODE ENABLED BY DEFAULT] No packages were removed. To execute actual deletion, add --apply.")
+            return
+
+        if args.clean:
+            if not args.force:
+                confirm = input(f"\nAre you sure you want to remove {len(removable)} package(s)? [y/N]: ")
+                if confirm.lower() not in ["y", "yes"]:
+                    print("Package removal cancelled by user.")
+                    return
+
+            print(f"\nExecuting package removal: {' '.join(cmd)}")
+            import subprocess
+            res = subprocess.run(cmd)
+            if res.returncode == 0:
+                print("\nPackage removal completed successfully.")
+            else:
+                print(f"\nPackage removal exited with status code {res.returncode}.")
+            return
+
+    # 2b. Retired / Repository-Orphaned Packages
+    elif getattr(args, "retired", False):
+        pkg_mgr_inst = get_pkg_mgr()
+        print("\nQuerying DNF / RPM for retired and repository-orphaned packages...")
+        suggs = pkg_mgr_inst.scan_retired_packages()
+        if not suggs:
+            print("No retired packages found! All installed packages are available in your repositories.")
+            return
+
+        table_rows = []
+        for s in suggs:
+            table_rows.append([s.name, s.version, s.formatted_size, s.reason, "YES" if s.is_protected else "NO"])
+
+        print("\n" + format_table(table_rows, ["Package", "Version", "Size", "Reason", "Protected"]))
+        removable = [s for s in suggs if not s.is_protected and s.is_selected]
+
+        if not (args.clean or args.dry_run):
+            if removable:
+                cmd = pkg_mgr_inst.get_removal_command(removable)
+                print(f"\nSuggested Removal Command:\n  {' '.join(cmd)}")
+                print("\nTo remove these retired packages, run: python3 main.py --retired --clean")
+            return
+
+        if not removable:
+            print("\nNo removable retired packages found (any detected packages are protected).")
+            return
+
+        cmd = pkg_mgr_inst.get_removal_command(removable)
+        is_dry_run = getattr(args, "dry_run", False) or (not getattr(args, "apply", False) if hasattr(args, "apply") else False)
+
+        if is_dry_run:
+            print(f"\n[DRY RUN] Would remove {len(removable)} retired package(s): {' '.join(p.name for p in removable)}")
+            print(f"Command: {' '.join(cmd)}")
+            print("[DRY RUN MODE ENABLED BY DEFAULT] No packages were removed. To execute actual deletion, add --apply.")
+            return
+
+        if args.clean:
+            if not args.force:
+                confirm = input(f"\nAre you sure you want to remove {len(removable)} retired package(s)? [y/N]: ")
+                if confirm.lower() not in ["y", "yes"]:
+                    print("Retired package removal cancelled by user.")
+                    return
+
+            print(f"\nExecuting retired package removal: {' '.join(cmd)}")
+            import subprocess
+            res = subprocess.run(cmd)
+            if res.returncode == 0:
+                print("\nRetired package removal completed successfully.")
+            else:
+                print(f"\nRetired package removal exited with status code {res.returncode}.")
+            return
+
+    # 2c. SELinux Status
+    elif getattr(args, "selinux_status", False):
+        selinux_mgr_inst = get_selinux_mgr()
+        st = selinux_mgr_inst.get_status()
+        print("\nSELinux System Status:")
+        print("=" * 50)
+        print(f"  SELinux Available:        {'YES' if selinux_mgr_inst.is_selinux_supported() else 'NO'}")
+        print(f"  Current Mode:             {st['mode']}")
+        print(f"  Loaded Policy:            {st['policy']}")
+        print(f"  Autorelabel on Next Boot: {'SCHEDULED' if st['autorelabel_scheduled'] else 'NOT SCHEDULED'}")
+        if st['autorelabel_scheduled'] and st['autorelabel_flags']:
+            print(f"  Autorelabel Flags:        {st['autorelabel_flags']}")
+        print(f"  Fixfiles Utility:         {st['fixfiles_path'] or 'Not found'}")
+        if st['autorelabel_scheduled']:
+            print("\nNote: File context relabel will execute automatically during the next system reboot.")
+        else:
+            print("\nTo schedule an on-boot SELinux policy fix, run: python3 main.py --selinux-fix-boot")
+        return
+
+    # 2d. SELinux On-Boot Relabel Scheduling
+    elif getattr(args, "selinux_fix_boot", False):
+        selinux_mgr_inst = get_selinux_mgr()
+        if not selinux_mgr_inst.is_selinux_supported():
+            print("\nError: SELinux is not supported or 'fixfiles' utility is not installed.")
+            print("Please install 'policycoreutils' to use SELinux maintenance.")
+            return
+
+        st = selinux_mgr_inst.get_status()
+        if st["autorelabel_scheduled"]:
+            print(f"\nAutorelabel is already scheduled for next boot (flags: '{st['autorelabel_flags']}').")
+            return
+
+        cmd = selinux_mgr_inst.get_schedule_command(boottime_only=True, use_sudo=True)
+        print("\nSELinux File Context Relabel on Next Boot:")
+        print("  This command schedules fixfiles -B onboot.")
+        print("  During next startup, the system will verify and fix SELinux security contexts")
+        print("  for files created or modified since last boot without doing a slow full disk relabel.")
+        print(f"\nCommand: {' '.join(cmd)}")
+
+        if not args.force:
+            confirm = input("\nSchedule SELinux relabel on next boot? [y/N]: ")
+            if confirm.lower() not in ["y", "yes"]:
+                print("SELinux fix cancelled by user.")
+                return
+
+        success, msg = selinux_mgr_inst.schedule_onboot_fix(boottime_only=True, use_sudo=True)
+        print(f"\n{msg}")
         return
 
     # 3. Restore Backups

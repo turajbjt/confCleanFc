@@ -594,6 +594,133 @@ class TestCLI(unittest.TestCase):
         self.assertIn("DRY RUN MODE ENABLED BY DEFAULT", out_clean)
         self.mock_cleaner.clean_items.assert_called_with([broken_sym], create_backup=False, dry_run=True)
 
+    def test_cli_retired_scan_and_clean_dry_run(self):
+        mock_pkg_mgr = MagicMock()
+        ret_pkg = PackageSuggestion(
+            name="dead-pkg",
+            version="1.0",
+            release="1.fc44",
+            arch="x86_64",
+            size_bytes=1024 * 1024,
+            summary="Dead package",
+            category="repo_orphan",
+            reason="Retired repo orphan",
+            is_protected=False,
+            is_selected=True,
+        )
+        mock_pkg_mgr.scan_retired_packages.return_value = [ret_pkg]
+        mock_pkg_mgr.get_removal_command.return_value = ["pkexec", "dnf", "remove", "-y", "dead-pkg"]
+
+        # Scan only
+        args_scan = argparse.Namespace(
+            scan=False, clean=False, dry_run=False, cache=False, packages=False,
+            symlinks=False, retired=True, selinux_status=False, selinux_fix_boot=False,
+            restore=None, reset_app=None, force=False, no_backup=False,
+        )
+        with patch("sys.stdout", new_callable=io.StringIO) as mock_stdout:
+            run_cli(args_scan, pkg_mgr=mock_pkg_mgr)
+            out = mock_stdout.getvalue()
+
+        self.assertIn("dead-pkg", out)
+        self.assertIn("Suggested Removal Command:", out)
+
+        # Clean (dry run by default)
+        args_clean = argparse.Namespace(
+            scan=False, clean=True, dry_run=False, apply=False, cache=False, packages=False,
+            symlinks=False, retired=True, selinux_status=False, selinux_fix_boot=False,
+            restore=None, reset_app=None, force=False, no_backup=False,
+        )
+        with patch("sys.stdout", new_callable=io.StringIO) as mock_stdout:
+            run_cli(args_clean, pkg_mgr=mock_pkg_mgr)
+            out_clean = mock_stdout.getvalue()
+
+        self.assertIn("[DRY RUN]", out_clean)
+        self.assertIn("Would remove 1 retired package(s)", out_clean)
+
+    @patch("subprocess.run")
+    def test_cli_retired_clean_apply(self, mock_subproc):
+        mock_proc = MagicMock()
+        mock_proc.returncode = 0
+        mock_subproc.return_value = mock_proc
+
+        mock_pkg_mgr = MagicMock()
+        ret_pkg = PackageSuggestion(
+            name="dead-pkg",
+            version="1.0",
+            release="1.fc44",
+            arch="x86_64",
+            size_bytes=1024,
+            summary="Dead package",
+            category="repo_orphan",
+            reason="Retired repo orphan",
+            is_protected=False,
+            is_selected=True,
+        )
+        mock_pkg_mgr.scan_retired_packages.return_value = [ret_pkg]
+        mock_pkg_mgr.get_removal_command.return_value = ["pkexec", "dnf", "remove", "-y", "dead-pkg"]
+
+        args_apply = argparse.Namespace(
+            scan=False, clean=True, dry_run=False, apply=True, cache=False, packages=False,
+            symlinks=False, retired=True, selinux_status=False, selinux_fix_boot=False,
+            restore=None, reset_app=None, force=True, no_backup=False,
+        )
+        with patch("sys.stdout", new_callable=io.StringIO) as mock_stdout:
+            run_cli(args_apply, pkg_mgr=mock_pkg_mgr)
+            out = mock_stdout.getvalue()
+
+        self.assertIn("Executing retired package removal", out)
+        self.assertIn("Retired package removal completed successfully", out)
+        mock_subproc.assert_called_once_with(["pkexec", "dnf", "remove", "-y", "dead-pkg"])
+
+    def test_cli_selinux_status(self):
+        mock_selinux = MagicMock()
+        mock_selinux.is_selinux_supported.return_value = True
+        mock_selinux.get_status.return_value = {
+            "mode": "Enforcing",
+            "policy": "targeted",
+            "autorelabel_scheduled": False,
+            "autorelabel_flags": "",
+            "fixfiles_path": "/usr/bin/fixfiles",
+        }
+
+        args = argparse.Namespace(
+            scan=False, clean=False, dry_run=False, cache=False, packages=False,
+            symlinks=False, retired=False, selinux_status=True, selinux_fix_boot=False,
+            restore=None, reset_app=None, force=False, no_backup=False,
+        )
+        with patch("sys.stdout", new_callable=io.StringIO) as mock_stdout:
+            run_cli(args, selinux_mgr=mock_selinux)
+            out = mock_stdout.getvalue()
+
+        self.assertIn("SELinux System Status:", out)
+        self.assertIn("Enforcing", out)
+        self.assertIn("targeted", out)
+        self.assertIn("NOT SCHEDULED", out)
+
+    def test_cli_selinux_fix_boot(self):
+        mock_selinux = MagicMock()
+        mock_selinux.is_selinux_supported.return_value = True
+        mock_selinux.get_status.return_value = {
+            "autorelabel_scheduled": False,
+            "autorelabel_flags": "",
+        }
+        mock_selinux.get_schedule_command.return_value = ["/usr/bin/sudo", "/usr/bin/fixfiles", "-B", "onboot"]
+        mock_selinux.schedule_onboot_fix.return_value = (True, "SELinux relabel scheduled for next boot")
+
+        args = argparse.Namespace(
+            scan=False, clean=False, dry_run=False, cache=False, packages=False,
+            symlinks=False, retired=False, selinux_status=False, selinux_fix_boot=True,
+            restore=None, reset_app=None, force=True, no_backup=False,
+        )
+        with patch("sys.stdout", new_callable=io.StringIO) as mock_stdout:
+            run_cli(args, selinux_mgr=mock_selinux)
+            out = mock_stdout.getvalue()
+
+        self.assertIn("SELinux File Context Relabel on Next Boot:", out)
+        self.assertIn("sudo /usr/bin/fixfiles -B onboot", out)
+        self.assertIn("SELinux relabel scheduled for next boot", out)
+        mock_selinux.schedule_onboot_fix.assert_called_once_with(boottime_only=True, use_sudo=True)
+
 
 if __name__ == "__main__":
     unittest.main()

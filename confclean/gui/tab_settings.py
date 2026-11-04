@@ -22,6 +22,7 @@ from PyQt6.QtWidgets import (
 )
 
 from confclean.core.safelist import SafetyEngine
+from confclean.core.selinux_manager import SELinuxManager
 
 
 class ElevationWorker(QThread):
@@ -64,9 +65,10 @@ class ElevationWorker(QThread):
 class SettingsTab(QWidget):
     """View for managing custom whitelists, root privileges, and tool settings."""
 
-    def __init__(self, safety: SafetyEngine):
+    def __init__(self, safety: SafetyEngine, selinux_mgr: Optional[SELinuxManager] = None):
         super().__init__()
         self.safety = safety
+        self.selinux_mgr = selinux_mgr or SELinuxManager()
         self._init_ui()
 
     def _init_ui(self):
@@ -99,7 +101,54 @@ class SettingsTab(QWidget):
 
         layout.addWidget(priv_card)
 
-        # 2. Whitelist Management Card
+        # 2. SELinux System Maintenance Card
+        selinux_card = QFrame()
+        selinux_card.setProperty("class", "card")
+        sl_layout = QVBoxLayout(selinux_card)
+        sl_layout.setContentsMargins(14, 12, 14, 12)
+        sl_layout.setSpacing(10)
+
+        sl_header = QHBoxLayout()
+        sl_title = QLabel("🛡️ SELinux Policy & File Context Maintenance")
+        sl_title.setStyleSheet("font-size: 15px; font-weight: bold; color: #ffffff;")
+        sl_header.addWidget(sl_title)
+        sl_header.addStretch()
+
+        self.btn_refresh_selinux = QPushButton("🔄 Refresh")
+        self.btn_refresh_selinux.clicked.connect(self._refresh_selinux_ui)
+        sl_header.addWidget(self.btn_refresh_selinux)
+        sl_layout.addLayout(sl_header)
+
+        sl_desc = QLabel(
+            "Fix security file contexts and SELinux policies across system directories. "
+            "Scheduling 'fixfiles -B onboot' relabels files created or modified since last boot "
+            "during next system startup without performing an excessively slow full-disk scan."
+        )
+        sl_desc.setStyleSheet("color: #a0a0a0; font-size: 13px;")
+        sl_layout.addWidget(sl_desc)
+
+        # Status and Actions row
+        sl_status_row = QHBoxLayout()
+        self.lbl_selinux_status = QLabel("SELinux: Checking status...")
+        self.lbl_selinux_status.setStyleSheet("font-size: 13px;")
+        sl_status_row.addWidget(self.lbl_selinux_status)
+        sl_status_row.addStretch()
+
+        self.btn_fix_selinux = QPushButton("🛡️ Fix SELinux on Next Boot (sudo fixfiles -B onboot)")
+        self.btn_fix_selinux.setProperty("class", "primary")
+        self.btn_fix_selinux.clicked.connect(self._schedule_selinux_fix)
+        sl_status_row.addWidget(self.btn_fix_selinux)
+
+        self.btn_cancel_selinux = QPushButton("❌ Cancel Scheduled Relabel")
+        self.btn_cancel_selinux.setProperty("class", "destructive")
+        self.btn_cancel_selinux.setVisible(False)
+        self.btn_cancel_selinux.clicked.connect(self._cancel_selinux_fix)
+        sl_status_row.addWidget(self.btn_cancel_selinux)
+
+        sl_layout.addLayout(sl_status_row)
+        layout.addWidget(selinux_card)
+
+        # 3. Whitelist Management Card
         wl_card = QFrame()
         wl_card.setProperty("class", "card")
         wl_layout = QVBoxLayout(wl_card)
@@ -170,6 +219,87 @@ class SettingsTab(QWidget):
         layout.addWidget(about_card)
 
         self._refresh_whitelist_ui()
+        self._refresh_selinux_ui()
+
+    def _refresh_selinux_ui(self):
+        st = self.selinux_mgr.get_status()
+        is_supported = self.selinux_mgr.is_selinux_supported()
+        is_scheduled = st["autorelabel_scheduled"]
+
+        if not is_supported:
+            self.lbl_selinux_status.setText("SELinux: <b>Not Installed / Unsupported</b>")
+            self.btn_fix_selinux.setEnabled(False)
+            self.btn_cancel_selinux.setVisible(False)
+            return
+
+        mode = st["mode"]
+        policy = st["policy"]
+        if is_scheduled:
+            flags = st["autorelabel_flags"] or "active"
+            status_txt = (
+                f"SELinux: <b>{mode}</b> ({policy}) | "
+                f"<span style='color: #f6c177; font-weight: bold;'>⚠️ Relabel Scheduled on Next Boot ({flags})</span>"
+            )
+            self.btn_cancel_selinux.setVisible(True)
+            self.btn_cancel_selinux.setEnabled(True)
+            self.btn_fix_selinux.setText("🛡️ Re-Schedule Relabel on Next Boot")
+        else:
+            status_txt = (
+                f"SELinux: <b>{mode}</b> ({policy}) | "
+                f"<span style='color: #9ece6a;'>✓ Normal Boot (No relabel pending)</span>"
+            )
+            self.btn_cancel_selinux.setVisible(False)
+            self.btn_fix_selinux.setText("🛡️ Fix SELinux on Next Boot (sudo fixfiles -B onboot)")
+
+        self.lbl_selinux_status.setText(status_txt)
+        self.btn_fix_selinux.setEnabled(st["fixfiles_available"])
+
+    def _schedule_selinux_fix(self):
+        if not self.selinux_mgr.is_selinux_supported():
+            QMessageBox.critical(
+                self,
+                "SELinux Unavailable",
+                "The 'fixfiles' utility is not installed. Please install 'policycoreutils' to enable SELinux maintenance.",
+            )
+            return
+
+        reply = QMessageBox.question(
+            self,
+            "Confirm SELinux Relabel on Next Boot",
+            "This will schedule 'fixfiles -B onboot'.\n\n"
+            "During the next system startup, the system will verify and fix SELinux security contexts "
+            "for files created or modified since last boot without doing a slow full disk relabel.\n\n"
+            "Proceed with scheduling?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        success, msg = self.selinux_mgr.schedule_onboot_fix(boottime_only=True, use_pkexec=True)
+        if success:
+            QMessageBox.information(self, "SELinux Relabel Scheduled", msg)
+        else:
+            QMessageBox.critical(self, "SELinux Relabel Error", msg)
+
+        self._refresh_selinux_ui()
+
+    def _cancel_selinux_fix(self):
+        reply = QMessageBox.question(
+            self,
+            "Cancel SELinux Relabel",
+            "Are you sure you want to cancel the scheduled SELinux relabel for the next boot?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        success, msg = self.selinux_mgr.cancel_onboot_fix(use_pkexec=True)
+        if success:
+            QMessageBox.information(self, "SELinux Relabel Cancelled", msg)
+        else:
+            QMessageBox.warning(self, "Error", msg)
+
+        self._refresh_selinux_ui()
 
     def _refresh_whitelist_ui(self):
         self.whitelist_list.clear()

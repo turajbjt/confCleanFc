@@ -9,10 +9,12 @@ from typing import List, Optional
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
+    QComboBox,
     QFrame,
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QLineEdit,
     QMessageBox,
     QProgressBar,
     QPushButton,
@@ -50,7 +52,7 @@ class PackageTab(QWidget):
         h_layout.setContentsMargins(12, 10, 12, 10)
 
         desc_lbl = QLabel(
-            "Detect unneeded RPM dependencies, older kernel versions, unused Flatpak runtimes, and disabled Snap revisions. "
+            "Detect unneeded RPM dependencies, retired packages, older kernel versions, unused Flatpak runtimes, and disabled Snap revisions. "
             "The currently booted kernel and backup kernel are strictly protected."
         )
         desc_lbl.setStyleSheet("color: #a0a0a0; font-size: 13px;")
@@ -65,12 +67,47 @@ class PackageTab(QWidget):
 
         layout.addWidget(header_card)
 
+        # Filter and Search Bar
+        filter_layout = QHBoxLayout()
+        filter_layout.setSpacing(10)
+
+        self.txt_search = QLineEdit()
+        self.txt_search.setPlaceholderText("Filter packages by name...")
+        self.txt_search.textChanged.connect(self._apply_filters)
+        filter_layout.addWidget(self.txt_search, stretch=2)
+
+        self.cat_filter = QComboBox()
+        self.cat_filter.addItems(
+            [
+                "All Categories",
+                "Retired Packages",
+                "Orphan Dependencies",
+                "Old Kernels",
+                "Duplicate Versions",
+                "Flatpak Runtimes",
+                "Snap Revisions",
+            ]
+        )
+        self.cat_filter.currentIndexChanged.connect(self._apply_filters)
+        filter_layout.addWidget(self.cat_filter, stretch=1)
+
+        self.btn_select_all = QPushButton("☑️ Select All")
+        self.btn_select_all.clicked.connect(self._select_all_visible)
+        filter_layout.addWidget(self.btn_select_all)
+
+        self.btn_deselect_all = QPushButton("⬜ Deselect All")
+        self.btn_deselect_all.clicked.connect(self._deselect_all_visible)
+        filter_layout.addWidget(self.btn_deselect_all)
+
+        layout.addLayout(filter_layout)
+
         # Package Table
         self.table = QTableWidget()
         self.table.setColumnCount(6)
         self.table.setHorizontalHeaderLabels(["", "Package Name", "Version", "Size", "Category", "Status / Reason"])
         self.table.setAlternatingRowColors(True)
         self.table.verticalHeader().setVisible(False)
+        self.table.itemChanged.connect(self._on_table_item_changed)
 
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
@@ -149,8 +186,8 @@ class PackageTab(QWidget):
         QMessageBox.critical(self, "Package Query Error", f"Failed to query packages: {error}")
 
     def _populate_table(self):
+        self.table.blockSignals(True)
         self.table.setRowCount(len(self.suggestions))
-        total_removable_bytes = 0
 
         for row, s in enumerate(self.suggestions):
             # Column 0: Checkbox
@@ -161,7 +198,6 @@ class PackageTab(QWidget):
             else:
                 chk.setFlags(chk.flags() | Qt.ItemFlag.ItemIsUserCheckable)
                 chk.setCheckState(Qt.CheckState.Checked if s.is_selected else Qt.CheckState.Unchecked)
-                total_removable_bytes += s.size_bytes
             self.table.setItem(row, 0, chk)
 
             # Column 1: Name
@@ -181,7 +217,9 @@ class PackageTab(QWidget):
             self.table.setItem(row, 3, size_item)
 
             # Column 4: Category
-            if s.category == "flatpak_unused":
+            if s.category == "repo_orphan":
+                cat_display = "Retired Package"
+            elif s.category == "flatpak_unused":
                 cat_display = "Flatpak Runtime"
             elif s.category == "snap_unused":
                 cat_display = "Snap Revision"
@@ -208,9 +246,88 @@ class PackageTab(QWidget):
                 name_item.setForeground(QColor("#ff7b72"))
             self.table.setItem(row, 5, reason_item)
 
-        size_mb = total_removable_bytes / (1024 * 1024)
-        self.lbl_summary.setText(f"Found {len(self.suggestions)} packages ({size_mb:.2f} MB removable).")
+        self.table.blockSignals(False)
         self.table.resizeColumnToContents(1)
+        self._apply_filters()
+        self._update_selected_summary()
+
+    def _on_table_item_changed(self, item: QTableWidgetItem):
+        if item.column() == 0:
+            row = item.row()
+            if 0 <= row < len(self.suggestions):
+                s = self.suggestions[row]
+                if not s.is_protected:
+                    s.is_selected = (item.checkState() == Qt.CheckState.Checked)
+                    self._update_selected_summary()
+
+    def _apply_filters(self):
+        query = self.txt_search.text().strip().lower()
+        filter_idx = self.cat_filter.currentIndex()
+        # 0: All, 1: Retired, 2: Orphan, 3: Kernel, 4: Duplicate, 5: Flatpak, 6: Snap
+
+        for row in range(self.table.rowCount()):
+            if row < len(self.suggestions):
+                s = self.suggestions[row]
+                matches_search = not query or (query in s.name.lower() or query in s.summary.lower())
+                matches_cat = True
+                if filter_idx == 1:
+                    matches_cat = (s.category == "repo_orphan")
+                elif filter_idx == 2:
+                    matches_cat = (s.category == "unneeded_dep")
+                elif filter_idx == 3:
+                    matches_cat = (s.category == "old_kernel")
+                elif filter_idx == 4:
+                    matches_cat = (s.category == "duplicate")
+                elif filter_idx == 5:
+                    matches_cat = (s.category == "flatpak_unused")
+                elif filter_idx == 6:
+                    matches_cat = (s.category == "snap_unused")
+
+                self.table.setRowHidden(row, not (matches_search and matches_cat))
+
+        self._update_selected_summary()
+
+    def _select_all_visible(self):
+        self.table.blockSignals(True)
+        for row in range(self.table.rowCount()):
+            if not self.table.isRowHidden(row) and row < len(self.suggestions):
+                s = self.suggestions[row]
+                if not s.is_protected:
+                    s.is_selected = True
+                    chk = self.table.item(row, 0)
+                    if chk:
+                        chk.setCheckState(Qt.CheckState.Checked)
+        self.table.blockSignals(False)
+        self._update_selected_summary()
+
+    def _deselect_all_visible(self):
+        self.table.blockSignals(True)
+        for row in range(self.table.rowCount()):
+            if not self.table.isRowHidden(row) and row < len(self.suggestions):
+                s = self.suggestions[row]
+                if not s.is_protected:
+                    s.is_selected = False
+                    chk = self.table.item(row, 0)
+                    if chk:
+                        chk.setCheckState(Qt.CheckState.Unchecked)
+        self.table.blockSignals(False)
+        self._update_selected_summary()
+
+    def _update_selected_summary(self):
+        total_items = len(self.suggestions)
+        selected = [s for s in self.suggestions if not s.is_protected and s.is_selected]
+        selected_bytes = sum(s.size_bytes for s in selected)
+        size_mb = selected_bytes / (1024 * 1024)
+
+        visible_count = sum(1 for r in range(self.table.rowCount()) if not self.table.isRowHidden(r))
+        if visible_count < total_items:
+            self.lbl_summary.setText(
+                f"Showing {visible_count} of {total_items} packages ({len(selected)} selected, {size_mb:.2f} MB removable)."
+            )
+        else:
+            self.lbl_summary.setText(
+                f"Found {total_items} packages ({len(selected)} selected, {size_mb:.2f} MB removable)."
+            )
 
     def _remove_selected_packages(self):
         selected_pkgs: List[PackageSuggestion] = []

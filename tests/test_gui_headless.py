@@ -551,6 +551,80 @@ class TestGUIHeadless(unittest.TestCase):
             self.assertTrue(tab.progress_bar.isHidden())
             mock_reanalyze.assert_called_once()
 
+    def test_package_tab_retired_package_and_filters(self):
+        s_retired = PackageSuggestion(
+            name="dead-app",
+            version="1.0",
+            release="1.fc44",
+            arch="x86_64",
+            size_bytes=10 * 1024 * 1024,
+            summary="A retired application",
+            category="repo_orphan",
+            reason="Retired package",
+            is_protected=False,
+            is_selected=True,
+        )
+        s_dep = PackageSuggestion(
+            name="old-lib",
+            version="2.0",
+            release="1.fc44",
+            arch="x86_64",
+            size_bytes=5 * 1024 * 1024,
+            summary="Unneeded dependency",
+            category="unneeded_dep",
+            reason="Unneeded dep",
+            is_protected=False,
+            is_selected=False,
+        )
+        tab = PackageTab(self.mock_pkg)
+        tab.suggestions = [s_retired, s_dep]
+        tab._populate_table()
+
+        self.assertEqual(tab.table.rowCount(), 2)
+        self.assertEqual(tab.table.item(0, 4).text(), "Retired Package")
+        self.assertEqual(tab.table.item(1, 4).text(), "Orphan Dependency")
+
+        # Filter by Retired Packages (index 1)
+        tab.cat_filter.setCurrentIndex(1)
+        self.assertFalse(tab.table.isRowHidden(0))
+        self.assertTrue(tab.table.isRowHidden(1))
+
+        # Test select/deselect all visible
+        tab._deselect_all_visible()
+        self.assertFalse(tab.suggestions[0].is_selected)
+        tab._select_all_visible()
+        self.assertTrue(tab.suggestions[0].is_selected)
+
+    def test_settings_tab_selinux_maintenance(self):
+        from confclean.core.selinux_manager import SELinuxManager
+        from PyQt6.QtWidgets import QMessageBox
+
+        mock_selinux = MagicMock(spec=SELinuxManager)
+        mock_selinux.is_selinux_supported.return_value = True
+        mock_selinux.get_status.return_value = {
+            "mode": "Permissive",
+            "policy": "targeted",
+            "autorelabel_scheduled": False,
+            "autorelabel_flags": "",
+            "fixfiles_available": True,
+        }
+
+        tab = SettingsTab(self.mock_safety, selinux_mgr=mock_selinux)
+        self.assertTrue(hasattr(tab, "btn_fix_selinux"))
+        self.assertTrue(hasattr(tab, "btn_cancel_selinux"))
+        self.assertIn("Permissive", tab.lbl_selinux_status.text())
+
+        # Test schedule fixfiles -B onboot
+        self.mock_quest.return_value = QMessageBox.StandardButton.Yes
+        mock_selinux.schedule_onboot_fix.return_value = (True, "Scheduled on boot")
+        tab._schedule_selinux_fix()
+        mock_selinux.schedule_onboot_fix.assert_called_once_with(boottime_only=True, use_pkexec=True)
+
+        # Test cancel fix
+        mock_selinux.cancel_onboot_fix.return_value = (True, "Cancelled")
+        tab._cancel_selinux_fix()
+        mock_selinux.cancel_onboot_fix.assert_called_once_with(use_pkexec=True)
+
 
 if __name__ == "__main__":
     unittest.main()

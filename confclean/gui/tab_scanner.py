@@ -161,7 +161,14 @@ class ScannerTab(QWidget):
 
         self.status_filter = QComboBox()
         self.status_filter.addItems(
-            ["Show All", "Confirmed Orphans Only", "Probable Orphans", "Active Applications", "Protected Safelist"]
+            [
+                "Show All",
+                "Confirmed Orphans Only",
+                "Probable Orphans",
+                "Active Applications",
+                "Protected Safelist",
+                "Broken Symlinks Only",
+            ]
         )
         self.status_filter.currentIndexChanged.connect(self._apply_filters)
         filter_layout.addWidget(self.status_filter)
@@ -314,7 +321,7 @@ class ScannerTab(QWidget):
             tree_item.setToolTip(1, item.path)
 
             # Column 2: Status Badge
-            tree_item.setText(2, self._format_status_badge(item.status))
+            tree_item.setText(2, self._format_status_badge(item.status, item.category))
 
             # Column 3: Category
             tree_item.setText(3, item.category)
@@ -351,7 +358,12 @@ class ScannerTab(QWidget):
         self._apply_filters()
         self._update_selected_stats()
 
-    def _format_status_badge(self, status: str) -> str:
+    def _format_status_badge(self, status: str, category: str = "") -> str:
+        if category == "broken_symlink":
+            if status == "CONFIRMED_ORPHAN":
+                return "🔗 Broken Link"
+            elif status == "PROBABLE_ORPHAN":
+                return "🔗 Stale Link"
         if status == "CONFIRMED_ORPHAN":
             return "🔴 Orphan"
         elif status == "PROBABLE_ORPHAN":
@@ -388,6 +400,8 @@ class ScannerTab(QWidget):
                 matches_status = (scan_item.status == "ACTIVE_APP")
             elif filter_mode == 4:  # Protected
                 matches_status = (scan_item.status == "PROTECTED")
+            elif filter_mode == 5:  # Broken Symlinks
+                matches_status = (scan_item.category == "broken_symlink")
 
             item.setHidden(not (matches_search and matches_status))
 
@@ -479,6 +493,16 @@ class ScannerTab(QWidget):
         act_copy = QAction("📋 Copy Path", self)
         act_copy.triggered.connect(lambda: self._copy_path(scan_item.path))
         menu.addAction(act_copy)
+
+        # Copy symlink target if item is a symlink
+        if os.path.islink(scan_item.path):
+            try:
+                target_str = os.readlink(scan_item.path)
+                act_copy_target = QAction(f"🔗 Copy Symlink Target ({target_str})", self)
+                act_copy_target.triggered.connect(lambda: self._copy_path(target_str))
+                menu.addAction(act_copy_target)
+            except OSError:
+                pass
 
         menu.addSeparator()
 

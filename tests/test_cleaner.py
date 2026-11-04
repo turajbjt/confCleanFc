@@ -186,6 +186,43 @@ class TestSafeCleaner(unittest.TestCase):
         self.assertTrue(os.path.exists(res.backup_archive_path))
         self.assertGreater(len(progress_calls), 0)
 
+    def test_clean_broken_symlinks_with_backup_and_restore(self):
+        from confclean.core.restore_manager import RestoreManager
+
+        symlink_dir = os.path.join(self.test_dir, "symlink_dir")
+        os.makedirs(symlink_dir, exist_ok=True)
+        missing_target = os.path.join(symlink_dir, "ghost_file.txt")
+        broken_link = os.path.join(symlink_dir, "broken_link.lnk")
+        os.symlink(missing_target, broken_link)
+
+        self.assertTrue(os.path.islink(broken_link))
+        self.assertFalse(os.path.exists(broken_link))
+
+        item_sym = ScanItem(
+            path=broken_link,
+            name="broken_link.lnk",
+            category="broken_symlink",
+            is_directory=False,
+            size_bytes=len(missing_target),
+            file_count=1,
+            last_modified=0,
+            status="CONFIRMED_ORPHAN",
+            reason="Broken symlink pointing to missing target",
+        )
+
+        res, msg = self.cleaner.clean_items([item_sym], create_backup=True, dry_run=False)
+        self.assertEqual(len(res.deleted_items), 1)
+        self.assertFalse(os.path.lexists(broken_link))
+        self.assertIsNotNone(res.backup_archive_path)
+        self.assertTrue(os.path.exists(res.backup_archive_path))
+
+        # Restore the cleaned broken symlink
+        restore_mgr = RestoreManager()
+        restore_res, restore_msg = restore_mgr.restore(res.backup_archive_path)
+        self.assertTrue(restore_res.success)
+        self.assertTrue(os.path.islink(broken_link))
+        self.assertEqual(os.readlink(broken_link), missing_target)
+
 
 if __name__ == "__main__":
     unittest.main()

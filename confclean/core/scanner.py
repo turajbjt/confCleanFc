@@ -188,6 +188,7 @@ class ConfigScanner:
         include_dotfiles: bool = True,
         include_system_etc: bool = True,
         include_broken_desktops: bool = True,
+        include_symlinks: bool = True,
         progress_callback: Optional[Callable[[str, int, int], None]] = None,
     ) -> List[ScanItem]:
         """
@@ -276,7 +277,204 @@ class ConfigScanner:
             if item:
                 items.append(item)
 
+        # Check Broken and Stale Symlinks across user and system directories
+        if include_symlinks:
+            symlink_items = self.scan_broken_symlinks(
+                include_system=include_system_etc,
+                progress_callback=progress_callback,
+            )
+            existing_paths = {it.path for it in items}
+            for s_it in symlink_items:
+                if s_it.path not in existing_paths:
+                    items.append(s_it)
+                    existing_paths.add(s_it.path)
+
         return items
+
+    def scan_broken_symlinks(
+        self,
+        search_dirs: Optional[List[str]] = None,
+        include_system: bool = False,
+        max_depth: int = 3,
+        progress_callback: Optional[Callable[[str, int, int], None]] = None,
+    ) -> List[ScanItem]:
+        """
+        Discovers broken and stale symbolic links across user configuration,
+        binary, data, and system directories.
+        """
+        user_home = os.path.expanduser("~")
+        if search_dirs is None:
+            search_dirs = [
+                os.path.join(user_home, ".config"),
+                os.path.join(user_home, ".local", "bin"),
+                os.path.join(user_home, "bin"),
+                os.path.join(user_home, ".local", "share"),
+                os.path.join(user_home, ".local", "state"),
+            ]
+            if include_system and os.geteuid() == 0:
+                search_dirs.extend(["/etc", "/usr/local/bin", "/usr/local/sbin"])
+            elif include_system and os.path.isdir("/usr/local/bin") and os.access("/usr/local/bin", os.R_OK):
+                search_dirs.append("/usr/local/bin")
+
+        skip_subdirs = {
+            "node_modules", ".git", ".cache", "steam", "Steam", "steamapps",
+            "flatpak", "containers", "venv", ".venv", "storage", "libvirt",
+            "selinux", "pki", "security"
+        }
+
+        symlink_candidates: List[str] = []
+
+        # 1. Walk configured search directories up to max_depth
+        for base in search_dirs:
+            if not os.path.isdir(base):
+                continue
+            try:
+                for root, dirs, files in os.walk(base, followlinks=False):
+                    dirs[:] = [d for d in dirs if d not in skip_subdirs and not d.startswith(".git")]
+                    rel = os.path.relpath(root, base)
+                    depth = 0 if rel == "." else len(rel.split(os.sep))
+                    if depth >= max_depth:
+                        dirs.clear()
+                        continue
+
+                    for name in files + dirs:
+                        p = os.path.join(root, name)
+                        if os.path.islink(p):
+                            symlink_candidates.append(p)
+            except (OSError, PermissionError):
+                continue
+
+        # 2. Check top-level user home directory entries (depth 1)
+        if os.path.isdir(user_home):
+            try:
+                for entry in os.listdir(user_home):
+                    p = os.path.join(user_home, entry)
+                    if os.path.islink(p):
+                        symlink_candidates.append(p)
+            except (OSError, PermissionError):
+                pass
+
+        results: List[ScanItem] = []
+        total = len(symlink_candidates)
+        for idx, sym_path in enumerate(symlink_candidates):
+            if progress_callback:
+                progress_callback(f"Checking symlink {os.path.basename(sym_path)}...", idx + 1, total)
+
+            item = self._analyze_symlink(sym_path)
+            if item:
+                results.append(item)
+
+        return results
+
+    def _analyze_symlink(self, path: str) -> Optional[ScanItem]:
+        """Analyzes a symlink to detect if it is broken, stale, protected, or active."""
+        if not os.path.islink(path):
+            return None
+
+        name = os.path.basename(path)
+        is_safe, safe_reason = self.safety.is_safelisted(path)
+
+        size = 0
+        mtime = 0.0
+        try:
+            lst = os.lstat(path)
+            size = lst.st_size
+            mtime = lst.st_mtime
+        except OSError:
+            pass
+
+        if is_safe:
+            return ScanItem(
+                path=path,
+                name=name,
+                category="broken_symlink",
+                is_directory=False,
+                size_bytes=size,
+                file_count=1,
+                last_modified=mtime,
+                status="PROTECTED",
+                reason=safe_reason,
+                suggested_action="keep",
+                is_selected=False,
+            )
+
+        try:
+            target = os.readlink(path)
+        except (OSError, PermissionError) as e:
+            target = f"<unreadable: {e}>"
+
+        target_exists = False
+        try:
+            os.stat(path)
+            target_exists = True
+        except (FileNotFoundError, OSError):
+            target_exists = False
+
+        if not target_exists:
+            # Check if this is an active runtime lock or socket for a running process
+            parent_dir_name = os.path.basename(os.path.dirname(path))
+            is_lock = any(w in name.lower() for w in ["lock", "cookie", "socket"])
+            if is_lock:
+                is_active, _, _, _ = self.detector.check_app_status(parent_dir_name)
+                if is_active:
+                    return ScanItem(
+                        path=path,
+                        name=name,
+                        category="broken_symlink",
+                        is_directory=False,
+                        size_bytes=size,
+                        file_count=1,
+                        last_modified=mtime,
+                        status="ACTIVE_APP",
+                        reason=f"Active application runtime lock/socket -> '{target}'",
+                        suggested_action="keep",
+                        is_selected=False,
+                    )
+
+            days_inactive = 0
+            if mtime > 0:
+                days_inactive = (time.time() - mtime) / 86400.0
+
+            reason_str = f"Broken symlink pointing to non-existent target: '{target}'"
+            if days_inactive > 14:
+                reason_str += f" (Inactive for {int(days_inactive)} days)"
+
+            return ScanItem(
+                path=path,
+                name=name,
+                category="broken_symlink",
+                is_directory=False,
+                size_bytes=size,
+                file_count=1,
+                last_modified=mtime,
+                status="CONFIRMED_ORPHAN",
+                reason=reason_str,
+                suggested_action="clean",
+                is_selected=True,
+            )
+
+        # Target exists: Check if it points to temporary directories outside its own tree
+        if target.startswith("/tmp/") or target.startswith("/var/tmp/"):
+            try:
+                common = os.path.commonpath([os.path.abspath(path), os.path.abspath(target)])
+                if common in ["/tmp", "/var/tmp", "/", ""]:
+                    return ScanItem(
+                        path=path,
+                        name=name,
+                        category="broken_symlink",
+                        is_directory=False,
+                        size_bytes=size,
+                        file_count=1,
+                        last_modified=mtime,
+                        status="PROBABLE_ORPHAN",
+                        reason=f"Stale symlink pointing to temporary directory: '{target}'",
+                        suggested_action="review",
+                        is_selected=False,
+                    )
+            except (ValueError, OSError):
+                pass
+
+        return None
 
     def _extract_exec_binary(self, line: str) -> Optional[str]:
         """Extracts the primary executable name or wrapper target from an Exec= or TryExec= line."""
@@ -445,7 +643,13 @@ class ConfigScanner:
                 is_selected=False,
             )
 
-        # 2. Handle /etc rpmsave / rpmnew
+        # 2. Check broken or stale symlink
+        if os.path.islink(path):
+            sym_item = self._analyze_symlink(path)
+            if sym_item is not None:
+                return sym_item
+
+        # 3. Handle /etc rpmsave / rpmnew
         if category == "system_etc":
             size, count, mtime = get_path_stats(path)
             if name.endswith(".rpmsave"):

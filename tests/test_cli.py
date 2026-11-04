@@ -507,11 +507,92 @@ class TestCLI(unittest.TestCase):
             diff="/etc/app.conf.rpmnew",
             force=False,
         )
-        run_cli(args)
+        run_cli(
+            args,
+            scanner=self.mock_scanner,
+            cleaner=self.mock_cleaner,
+            safety=self.mock_safety,
+            backup_mgr=self.mock_backup_mgr,
+        )
         out = mock_stdout.getvalue()
         self.assertIn("Configuration Diff", out)
         self.assertIn("/etc/app.conf.rpmnew", out)
         self.assertIn("+new", out)
+
+    def test_cli_symlinks_scan_and_clean(self):
+        broken_sym = ScanItem(
+            path="/home/user/.local/bin/dead_tool",
+            name="dead_tool",
+            category="broken_symlink",
+            is_directory=False,
+            size_bytes=24,
+            file_count=1,
+            last_modified=1000.0,
+            status="CONFIRMED_ORPHAN",
+            reason="Broken symlink pointing to non-existent target: '/opt/missing'",
+            suggested_action="clean",
+            is_selected=True,
+        )
+        self.mock_scanner.scan_broken_symlinks.return_value = [broken_sym]
+        clean_res = CleanResult()
+        clean_res.deleted_items = [broken_sym]
+        clean_res.is_dry_run = True
+        self.mock_cleaner.clean_items.return_value = (clean_res, "Dry run complete: 1 items would be cleaned")
+
+        # 1. Test symlink scan only
+        args_scan = argparse.Namespace(
+            scan=False,
+            clean=False,
+            dry_run=False,
+            cache=False,
+            packages=False,
+            symlinks=True,
+            restore=None,
+            reset_app=None,
+            force=False,
+            no_backup=False,
+        )
+        with patch("sys.stdout", new_callable=io.StringIO) as mock_stdout:
+            run_cli(
+                args_scan,
+                scanner=self.mock_scanner,
+                cleaner=self.mock_cleaner,
+                safety=self.mock_safety,
+                backup_mgr=self.mock_backup_mgr,
+            )
+            out = mock_stdout.getvalue()
+
+        self.assertIn("dead_tool", out)
+        self.assertIn("Broken symlink", out)
+        self.assertIn("Discovered 1 broken symbolic link", out)
+
+        # 2. Test symlink clean (dry run by default)
+        args_clean = argparse.Namespace(
+            scan=False,
+            clean=True,
+            dry_run=False,
+            apply=False,
+            cache=False,
+            packages=False,
+            symlinks=True,
+            restore=None,
+            reset_app=None,
+            force=True,
+            no_backup=False,
+        )
+        with patch("sys.stdout", new_callable=io.StringIO) as mock_stdout:
+            run_cli(
+                args_clean,
+                scanner=self.mock_scanner,
+                cleaner=self.mock_cleaner,
+                safety=self.mock_safety,
+                backup_mgr=self.mock_backup_mgr,
+            )
+            out_clean = mock_stdout.getvalue()
+
+        self.assertIn("[DRY RUN]", out_clean)
+        self.assertIn("DRY RUN MODE ENABLED BY DEFAULT", out_clean)
+        self.mock_cleaner.clean_items.assert_called_with([broken_sym], create_backup=False, dry_run=True)
 
 
 if __name__ == "__main__":

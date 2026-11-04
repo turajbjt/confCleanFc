@@ -153,11 +153,12 @@ class TestGUIHeadless(unittest.TestCase):
         i2 = ScanItem("/p2", "cura-lulzbot", "config", True, 2000, 1, 10.0, "PROBABLE_ORPHAN", "Probable", is_selected=False)
         i3 = ScanItem("/p3", "firefox", "config", True, 3000, 1, 10.0, "ACTIVE_APP", "Active", is_selected=False)
         i4 = ScanItem("/p4", "dconf", "config", True, 4000, 1, 10.0, "PROTECTED", "Protected", is_selected=False)
+        i5 = ScanItem("/p5", "dead_link.lnk", "broken_symlink", False, 10, 1, 10.0, "CONFIRMED_ORPHAN", "Broken symlink", is_selected=True)
 
-        tab.scanned_items = [i1, i2, i3, i4]
+        tab.scanned_items = [i1, i2, i3, i4, i5]
         tab._populate_tree()
 
-        self.assertEqual(tab.tree.topLevelItemCount(), 4)
+        self.assertEqual(tab.tree.topLevelItemCount(), 5)
 
         # Check selection buttons
         tab._select_all()
@@ -165,6 +166,7 @@ class TestGUIHeadless(unittest.TestCase):
         self.assertTrue(i2.is_selected)
         self.assertTrue(i3.is_selected)
         self.assertFalse(i4.is_selected)  # Protected item cannot be selected!
+        self.assertTrue(i5.is_selected)
 
         tab._select_none()
         self.assertFalse(i1.is_selected)
@@ -172,6 +174,7 @@ class TestGUIHeadless(unittest.TestCase):
         tab._select_orphans_only()
         self.assertTrue(i1.is_selected)
         self.assertFalse(i2.is_selected)
+        self.assertTrue(i5.is_selected)
 
         # Filter by search text
         tab.search_input.setText("asunder")
@@ -185,6 +188,17 @@ class TestGUIHeadless(unittest.TestCase):
         tab._apply_filters()
         self.assertFalse(tab.tree.topLevelItem(0).isHidden())
         self.assertTrue(tab.tree.topLevelItem(2).isHidden())
+
+        # Filter by dropdown (Broken Symlinks Only = index 5)
+        tab.status_filter.setCurrentIndex(5)
+        tab._apply_filters()
+        self.assertTrue(tab.tree.topLevelItem(0).isHidden())
+        self.assertTrue(tab.tree.topLevelItem(1).isHidden())
+        self.assertFalse(tab.tree.topLevelItem(4).isHidden())
+
+        # Badge verification
+        badge = tab._format_status_badge("CONFIRMED_ORPHAN", "broken_symlink")
+        self.assertIn("Broken Link", badge)
 
     def test_cache_tab_ui(self):
         cat1 = CacheCategory("thumb", "Thumbnails", "Thumb cache", False, ["/p"], size_bytes=5000)

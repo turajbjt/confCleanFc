@@ -40,6 +40,7 @@ When run without flags in a graphical desktop session (Wayland or X11), ConfClea
 | :--- | :--- |
 | `--cache` | Scan cleanable application caches, thumbnails, trash, and system temporary files. When combined with `--clean`, purges them. |
 | `--packages` | Scan DNF, RPM, Flatpak, and Snap for unneeded dependencies, redundant kernels, unused runtimes, and disabled revisions. |
+| `--symlinks` | Scan and clean broken or stale symbolic links across user and system directories. |
 | `--diff <FILE>` | View a syntax-highlighted unified diff between an RPM template (`.rpmnew` or `.rpmsave`) and its active configuration file. |
 | `--restore [ID]` | List available backup archives (if no ID specified) or restore files from a specific backup ID or path. |
 | `--reset-app <APP>` | Reset an application's settings to factory defaults with automatic backup (**Dry run by default** unless `--apply`). |

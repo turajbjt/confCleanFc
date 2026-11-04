@@ -223,6 +223,68 @@ class TestConfigScanner(unittest.TestCase):
         self.assertEqual(item.status, "ACTIVE_APP")
         self.assertFalse(item.is_selected)
 
+    def test_scan_broken_symlinks(self):
+        # 1. Broken symlink (target missing)
+        broken_target = os.path.join(self.config_dir, "nonexistent_target.txt")
+        broken_link = os.path.join(self.config_dir, "broken_tool.lnk")
+        os.symlink(broken_target, broken_link)
+
+        # 2. Valid symlink (target exists)
+        valid_target = os.path.join(self.config_dir, "real_file.txt")
+        with open(valid_target, "w") as f:
+            f.write("hello")
+        valid_link = os.path.join(self.config_dir, "valid_tool.lnk")
+        os.symlink(valid_target, valid_link)
+
+        # 3. Protected symlink (matches dconf* in safelist)
+        protected_link = os.path.join(self.config_dir, "dconf_backup.lnk")
+        os.symlink(broken_target, protected_link)
+
+        items = self.scanner.scan_broken_symlinks(search_dirs=[self.config_dir])
+        item_paths = {it.path: it for it in items}
+
+        self.assertIn(broken_link, item_paths)
+        broken_item = item_paths[broken_link]
+        self.assertEqual(broken_item.category, "broken_symlink")
+        self.assertEqual(broken_item.status, "CONFIRMED_ORPHAN")
+        self.assertTrue(broken_item.is_selected)
+        self.assertEqual(broken_item.suggested_action, "clean")
+        self.assertIn("Broken symlink pointing to non-existent target", broken_item.reason)
+        self.assertIn("nonexistent_target.txt", broken_item.reason)
+
+        # Valid link should not be reported as an orphan
+        self.assertNotIn(valid_link, item_paths)
+
+        # Protected link should be recognized and kept safe
+        self.assertIn(protected_link, item_paths)
+        protected_item = item_paths[protected_link]
+        self.assertEqual(protected_item.status, "PROTECTED")
+        self.assertFalse(protected_item.is_selected)
+        self.assertEqual(protected_item.suggested_action, "keep")
+
+    def test_scan_stale_temp_symlink(self):
+        # Create a temporary file and a symlink pointing into /tmp/
+        temp_target = "/tmp/confclean_test_temp_socket"
+        with open(temp_target, "w") as f:
+            f.write("sock")
+        try:
+            temp_link = os.path.join(self.config_dir, "temp_service.sock")
+            os.symlink(temp_target, temp_link)
+
+            items = self.scanner.scan_broken_symlinks(search_dirs=[self.config_dir])
+            item_paths = {it.path: it for it in items}
+
+            self.assertIn(temp_link, item_paths)
+            item = item_paths[temp_link]
+            self.assertEqual(item.category, "broken_symlink")
+            self.assertEqual(item.status, "PROBABLE_ORPHAN")
+            self.assertFalse(item.is_selected)
+            self.assertEqual(item.suggested_action, "review")
+            self.assertIn("pointing to temporary directory", item.reason)
+        finally:
+            if os.path.exists(temp_target):
+                os.remove(temp_target)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -171,7 +171,7 @@ def run_cli(
 
     # 4. Reset App
     elif args.reset_app:
-        app_resetter = AppResetter()
+        app_resetter = AppResetter(detector=scanner.detector, backup_mgr=backup_mgr, safety=safety)
         profiles = app_resetter.discover_reset_profiles()
         target_prof = None
         for p in profiles:
@@ -210,7 +210,55 @@ def run_cli(
             print(f"Safety Backup Created at: {b_arch}")
         return
 
-    # 5. Scan / Clean Orphan Configurations
+    # 5. Broken / Stale Symlink Scanning and Cleaning
+    elif getattr(args, "symlinks", False):
+        print("\nScanning for broken and stale symbolic links...")
+        items = scanner.scan_broken_symlinks()
+        broken = [i for i in items if i.status == "CONFIRMED_ORPHAN"]
+        stale = [i for i in items if i.status == "PROBABLE_ORPHAN"]
+
+        table_rows = []
+        for it in broken:
+            table_rows.append([it.name, it.path, it.reason, it.status])
+
+        if table_rows:
+            print("\n" + format_table(table_rows, ["Symlink", "Location", "Reason", "Status"]))
+            print(f"\nDiscovered {len(broken)} broken symbolic link(s).")
+            if stale:
+                print(f"Discovered {len(stale)} stale symlink(s) pointing to temporary paths.")
+        else:
+            print("\nNo broken or stale symbolic links found! Your system symlinks are clean.")
+            return
+
+        # If only scan requested without clean or dry_run
+        if not (args.clean or args.dry_run):
+            print("\nTo remove these broken symlinks, run: python3 main.py --symlinks --clean")
+            return
+
+        is_dry_run = getattr(args, "dry_run", False) or (not getattr(args, "apply", False) if hasattr(args, "apply") else False)
+
+        if is_dry_run:
+            res, summary = cleaner.clean_items(broken, create_backup=False, dry_run=True)
+            print(f"\n[DRY RUN] {summary}")
+            print("[DRY RUN MODE ENABLED BY DEFAULT] No symlinks were removed. To execute actual deletion, add --apply.")
+            return
+
+        if args.clean:
+            if not args.force:
+                confirm = input(f"\nAre you sure you want to remove {len(broken)} broken symlinks? [y/N]: ")
+                if confirm.lower() not in ["y", "yes"]:
+                    print("Symlink cleanup cancelled by user.")
+                    return
+
+            create_backup = not args.no_backup
+            print(f"\nExecuting symlink cleanup (Backup {'ENABLED' if create_backup else 'DISABLED'})...")
+            res, summary = cleaner.clean_items(broken, create_backup=create_backup, dry_run=False)
+            print(f"\n{summary}")
+            if res.backup_archive_path:
+                print(f"Safety Backup Archive: {res.backup_archive_path}")
+            return
+
+    # 6. Scan / Clean Orphan Configurations
     elif args.scan or args.clean or args.dry_run:
         print("\nScanning for leftover configurations and orphaned settings...")
         items = scanner.scan_all()

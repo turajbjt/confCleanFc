@@ -227,7 +227,7 @@ class BackupManager:
             archive_relpath = f"data/{item_id}/{os.path.basename(item.path)}"
             mode_str = "0755"
             try:
-                st = os.stat(item.path)
+                st = os.lstat(item.path)
                 mode_str = oct(st.st_mode)[-4:]
             except OSError:
                 pass
@@ -273,7 +273,7 @@ class BackupManager:
                     if progress_callback:
                         progress_callback(f"Backing up {item.name}...", idx + 1, total_items)
 
-                    if os.path.exists(item.path):
+                    if os.path.lexists(item.path):
                         tar.add(item.path, arcname=archive_relpath, recursive=True)
 
             # Write companion JSON manifest on disk for instant reading (<1ms)

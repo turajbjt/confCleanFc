@@ -75,6 +75,11 @@ if [ -z "${RPM_FILE}" ] || [ ! -f "${RPM_FILE}" ]; then
 fi
 
 RPM_FILENAME="$(basename "${RPM_FILE}")"
+
+# Purge any older RPMs in dist and root to ensure only the latest unified RPM exists
+rm -f "${DIST_DIR}"/*.rpm
+find "${ROOT_DIR}" -maxdepth 1 -name "confclean-fc-*.rpm" ! -name "${RPM_FILENAME}" -delete 2>/dev/null || true
+
 cp "${RPM_FILE}" "${DIST_DIR}/${RPM_FILENAME}"
 cp "${RPM_FILE}" "${ROOT_DIR}/${RPM_FILENAME}"
 

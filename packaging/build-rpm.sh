@@ -9,6 +9,7 @@ PKG_NAME="confclean-fc"
 PKG_VERSION="${PKG_VERSION:-$(PYTHONPATH="${ROOT_DIR}" python3 -c "import confclean; print(confclean.__version__)")}"
 DIST_DIR="${ROOT_DIR}/dist"
 RPMBUILD_DIR="${ROOT_DIR}/rpmbuild"
+DIST_TAG="${DIST_TAG:-%{nil}}"
 
 # Locate rpmbuild binary
 if command -v rpmbuild >/dev/null 2>&1; then
@@ -58,10 +59,11 @@ rm -rf "${TMP_SRC}"
 # Copy spec file
 cp "${SCRIPT_DIR}/confclean-fc.spec" "${RPMBUILD_DIR}/SPECS/"
 
-echo "==> Building binary RPM package..."
+echo "==> Building binary RPM package (dist tag: '${DIST_TAG}')..."
 "${RPMBUILD_BIN}" \
     --define "_topdir ${RPMBUILD_DIR}" \
     --define "_tmppath /tmp" \
+    --define "dist ${DIST_TAG}" \
     -bb "${RPMBUILD_DIR}/SPECS/confclean-fc.spec"
 
 # Find generated RPM

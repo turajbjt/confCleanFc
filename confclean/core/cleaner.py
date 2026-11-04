@@ -132,9 +132,33 @@ class SafeCleaner:
                     continue
 
                 if os.path.isdir(it.path) and not os.path.islink(it.path):
-                    shutil.rmtree(it.path)
+                    def _handle_readonly(func, p, exc):
+                        import stat
+                        try:
+                            parent = os.path.dirname(p)
+                            os.chmod(parent, stat.S_IRWXU)
+                        except Exception:
+                            pass
+                        try:
+                            os.chmod(p, stat.S_IRWXU)
+                            func(p)
+                        except Exception:
+                            pass
+
+                    try:
+                        shutil.rmtree(it.path, onexc=_handle_readonly)
+                    except TypeError:
+                        shutil.rmtree(it.path, onerror=_handle_readonly)
                 else:
-                    os.remove(it.path)
+                    try:
+                        os.remove(it.path)
+                    except PermissionError:
+                        import stat
+                        try:
+                            os.chmod(it.path, stat.S_IRWXU)
+                            os.remove(it.path)
+                        except Exception:
+                            raise
 
                 result.deleted_items.append(it)
                 result.total_reclaimed_bytes += it.size_bytes

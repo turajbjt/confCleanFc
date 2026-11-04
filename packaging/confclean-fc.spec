@@ -1,6 +1,6 @@
 Name:           confclean-fc
 Version:        1.1.4
-Release:        5%{?dist}
+Release:        6%{?dist}
 Summary:        Fedora & RPM system cleaner and orphan configuration purger
 
 License:        GPL-3.0-or-later
@@ -135,6 +135,11 @@ fi
 %{_datadir}/polkit-1/actions/io.github.confclean_fc.policy
 
 %changelog
+* Wed Nov 04 2026 James Turansky <turajb@gmail.com> - 1.1.4-6
+- Safely handle unreadable files (permission denied) during pre-deletion backup without aborting cleanup
+- Add automatic permission unlock for read-only directories and files during rmtree
+- Inform user with guidance to elevate via pkexec if root-owned files cannot be removed
+
 * Wed Nov 04 2026 James Turansky <turajb@gmail.com> - 1.1.4-5
 - Fix AppConfigsTab.status_changed signal signature (0 arguments) to prevent crash on startup scan
 

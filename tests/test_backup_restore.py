@@ -248,6 +248,35 @@ class TestBackupAndRestore(unittest.TestCase):
         manifest_p = arch_path[:-7] + ".manifest.json"
         self.assertFalse(os.path.exists(manifest_p))
 
+    def test_backup_with_unreadable_file_permission_denied(self):
+        # Create unreadable file inside fake_config (simulating root 0600 file like sesman_passwd)
+        unreadable_file = os.path.join(self.fake_config, "root_locked.key")
+        with open(unreadable_file, "w") as f:
+            f.write("SUPER_SECRET_ROOT_DATA")
+        os.chmod(unreadable_file, 0o000)
+
+        size, count, mtime = get_path_stats(self.fake_config)
+        item = ScanItem(
+            path=self.fake_config,
+            name="fake_app_config",
+            category="config",
+            is_directory=True,
+            size_bytes=size,
+            file_count=count,
+            last_modified=mtime,
+            status="CONFIRMED_ORPHAN",
+            reason="Test with unreadable file",
+        )
+
+        ok, arch_path, log_p, msg = self.backup_mgr.create_backup([item])
+        # Must succeed and not abort the entire backup!
+        self.assertTrue(ok)
+        self.assertIn("warning", msg.lower())
+        self.assertTrue(os.path.isfile(arch_path))
+
+        # Restore permissions so tearDown can clean up test_dir
+        os.chmod(unreadable_file, 0o644)
+
 
 if __name__ == "__main__":
     unittest.main()

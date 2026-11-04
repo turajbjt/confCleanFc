@@ -604,7 +604,18 @@ class ScannerTab(QWidget):
         self.btn_rescan.setEnabled(True)
         self.btn_clean.setEnabled(True)
 
-        QMessageBox.information(self, "Cleanup Complete", summary)
+        if result.failed_items:
+            has_perm_err = any("permission" in str(err).lower() for _, err in result.failed_items)
+            msg = summary
+            if has_perm_err:
+                msg += (
+                    "\n\nSome items could not be deleted due to system permissions. "
+                    "You can relaunch ConfClean FC as root from the Settings & Safelist tab to clean root-owned leftovers."
+                )
+            QMessageBox.warning(self, "Cleanup Finished with Warnings", msg)
+        else:
+            QMessageBox.information(self, "Cleanup Complete", summary)
+
         # Rescan after actual deletion
         if not result.is_dry_run:
             self.start_scan()

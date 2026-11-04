@@ -159,6 +159,69 @@ class BackupManager:
         except OSError:
             return None
 
+    def _add_to_tar_safe(
+        self,
+        tar: tarfile.TarFile,
+        disk_path: str,
+        arc_path: str,
+        warnings: List[str],
+    ):
+        """
+        Recursively adds disk_path to tar archive with resilient permission error handling.
+        Files that cannot be read due to permissions or OS errors are logged as warnings
+        rather than aborting the entire backup and deletion operation.
+        """
+        if not os.path.lexists(disk_path):
+            return
+
+        if os.path.islink(disk_path):
+            try:
+                tarinfo = tar.gettarinfo(disk_path, arc_path)
+                tar.addfile(tarinfo)
+            except (OSError, PermissionError) as e:
+                msg = f"Skipped symlink '{disk_path}': {e}"
+                warnings.append(msg)
+                self.logger.warning(msg)
+            return
+
+        if os.path.isdir(disk_path):
+            try:
+                tarinfo = tar.gettarinfo(disk_path, arc_path)
+                tar.addfile(tarinfo)
+            except (OSError, PermissionError) as e:
+                msg = f"Skipped directory header for '{disk_path}': {e}"
+                warnings.append(msg)
+                self.logger.warning(msg)
+                return
+
+            try:
+                with os.scandir(disk_path) as it:
+                    entries = sorted(list(it), key=lambda e: e.name)
+            except (OSError, PermissionError) as e:
+                msg = f"Could not list directory contents of '{disk_path}': {e}"
+                warnings.append(msg)
+                self.logger.warning(msg)
+                return
+
+            for entry in entries:
+                child_disk = entry.path
+                child_arc = os.path.join(arc_path, entry.name)
+                self._add_to_tar_safe(tar, child_disk, child_arc, warnings)
+            return
+
+        # Regular or special file
+        try:
+            tarinfo = tar.gettarinfo(disk_path, arc_path)
+            if tarinfo.isreg():
+                with open(disk_path, "rb") as f:
+                    tar.addfile(tarinfo, f)
+            else:
+                tar.addfile(tarinfo)
+        except (OSError, PermissionError) as e:
+            msg = f"Skipped unreadable file '{disk_path}': {e}"
+            warnings.append(msg)
+            self.logger.warning(msg)
+
     def create_backup(
         self,
         items_to_backup: List[ScanItem],
@@ -255,6 +318,7 @@ class BackupManager:
             )
 
         self.logger.info(f"Initiating pre-clean backup for {len(items_to_backup)} items into {archive_path}")
+        warnings: List[str] = []
 
         try:
             with tarfile.open(archive_path, "w:gz") as tar:
@@ -267,20 +331,29 @@ class BackupManager:
                 tarinfo.mtime = time.time()
                 tar.addfile(tarinfo, io.BytesIO(manifest_json_bytes))
 
-                # 2. Add each item to the archive
+                # 2. Add each item to the archive with resilient permission error handling
                 total_items = len(items_to_backup)
                 for idx, (item, archive_relpath) in enumerate(items_meta):
                     if progress_callback:
                         progress_callback(f"Backing up {item.name}...", idx + 1, total_items)
 
                     if os.path.lexists(item.path):
-                        tar.add(item.path, arcname=archive_relpath, recursive=True)
+                        self._add_to_tar_safe(tar, item.path, archive_relpath, warnings)
+
+            if warnings:
+                manifest["warnings"] = warnings
 
             # Write companion JSON manifest on disk for instant reading (<1ms)
             with open(manifest_disk_path, "w", encoding="utf-8") as f_manifest:
                 json.dump(manifest, f_manifest, indent=2)
 
             # Write companion human-readable .log file on disk
+            if warnings:
+                log_lines.append("")
+                log_lines.append(f"Backup Warnings ({len(warnings)} unreadable item(s) skipped):")
+                for w in warnings:
+                    log_lines.append(f"  [WARNING] {w}")
+
             log_lines.append("-" * 70)
             log_lines.append(f"Backup archive created successfully at: {archive_path}")
             log_lines.append(f"Archive file size: {os.path.getsize(archive_path) / (1024*1024):.2f} MB")
@@ -297,7 +370,10 @@ class BackupManager:
                 details=f"Contains {len(items_to_backup)} items",
             )
 
-            return True, archive_path, log_path, f"Backup created successfully: {archive_name}"
+            success_msg = f"Backup created successfully: {archive_name}"
+            if warnings:
+                success_msg += f" ({len(warnings)} unreadable file warning(s))"
+            return True, archive_path, log_path, success_msg
 
         except Exception as e:
             self.logger.error(f"Failed to create backup archive: {e}")

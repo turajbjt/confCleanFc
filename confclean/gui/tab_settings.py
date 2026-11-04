@@ -171,12 +171,24 @@ class SettingsTab(QWidget):
 
         layout.addWidget(about_card)
 
-        self._refresh_whitelist_ui()
+        self.refresh_whitelist()
+
+    def refresh_whitelist(self):
+        """Reloads user whitelist from disk/memory and updates QListWidget."""
+        if hasattr(self.safety, "load_user_whitelist"):
+            self.safety.load_user_whitelist()
+        elif hasattr(self.safety, "_load_user_whitelist"):
+            self.safety._load_user_whitelist()
+        self.whitelist_list.clear()
+        for p in getattr(self.safety, "user_whitelist", []):
+            self.whitelist_list.addItem(p)
 
     def _refresh_whitelist_ui(self):
-        self.whitelist_list.clear()
-        for p in self.safety.user_whitelist:
-            self.whitelist_list.addItem(p)
+        self.refresh_whitelist()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self.refresh_whitelist()
 
     def _add_to_whitelist(self):
         item = self.txt_whitelist_input.text().strip()

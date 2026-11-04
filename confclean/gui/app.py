@@ -221,6 +221,8 @@ class MainWindow(QMainWindow):
 
     def _on_nav_changed(self, index: int):
         self.stack.setCurrentIndex(index)
+        if index == 5:
+            self.tab_settings.refresh_whitelist()
         if not self.auto_scan_on_nav:
             return
         # Auto-trigger refresh for specific tabs when switched

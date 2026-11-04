@@ -429,6 +429,33 @@ class TestGUIHeadless(unittest.TestCase):
             win._on_nav_changed(2)
             mock_pkg_scan.assert_called_once()
 
+    def test_settings_tab_whitelist_auto_refresh_on_nav(self):
+        # Initial state has 1 item ("protected_custom")
+        win = MainWindow(
+            scanner=self.mock_scanner,
+            cleaner=self.mock_cleaner,
+            safety=self.mock_safety,
+            backup_mgr=self.mock_backup_mgr,
+            restore_mgr=self.mock_restore_mgr,
+            cache_cleaner=self.mock_cache,
+            pkg_mgr=self.mock_pkg,
+            app_resetter=self.mock_resetter,
+            auto_scan_on_nav=False,
+        )
+        self.assertEqual(win.tab_settings.whitelist_list.count(), 1)
+
+        # Simulate adding an item to safety whitelist (e.g. from Scanner tab right-click action)
+        self.mock_safety.user_whitelist.append("newly_whitelisted_from_scanner")
+
+        # Navigate to SettingsTab (index 5) via sidebar
+        win.sidebar.setCurrentRow(5)
+        self.assertEqual(win.tab_settings.whitelist_list.count(), 2)
+        items = [win.tab_settings.whitelist_list.item(i).text() for i in range(win.tab_settings.whitelist_list.count())]
+        self.assertIn("newly_whitelisted_from_scanner", items)
+
+        # Cleanup mock safety list for other tests
+        self.mock_safety.user_whitelist.remove("newly_whitelisted_from_scanner")
+
     @patch("confclean.gui.tab_scanner.get_rpm_diff")
     def test_rpm_diff_dialog(self, mock_diff):
         mock_diff.return_value = (

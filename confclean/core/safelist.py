@@ -152,6 +152,10 @@ class SafetyEngine:
         self.user_whitelist: List[str] = []
         self._load_user_whitelist()
 
+    def load_user_whitelist(self):
+        """Loads or reloads user-defined custom whitelist patterns from JSON."""
+        self._load_user_whitelist()
+
     def _load_user_whitelist(self):
         """Loads user-defined custom whitelist patterns from JSON."""
         self.user_whitelist.clear()

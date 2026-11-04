@@ -160,31 +160,115 @@ class TestCacheCleaner(unittest.TestCase):
         mock_subproc.return_value = MagicMock(returncode=0)
         self.cleaner.is_root = True
 
+        fake_dnf = os.path.join(self.test_dir, "fake_dnf")
+        os.makedirs(fake_dnf, exist_ok=True)
+        fake_solv = os.path.join(fake_dnf, "test.solv")
+        with open(fake_solv, "w") as f:
+            f.write("repo data")
+
         # Test dnf clean all
         cat_dnf = CacheCategory(
             category_id="dnf_cache",
             name="DNF Cache",
             description="Package cache",
             requires_root=True,
-            paths=["/var/cache/dnf"],
+            paths=[fake_dnf],
             size_bytes=5000,
         )
         b, c, msg = self.cleaner.clean_category(cat_dnf, dry_run=False)
-        self.assertEqual(b, 5000)
-        self.assertIn("dnf clean all", msg)
+        self.assertGreaterEqual(b, 0)
+        self.assertIn("DNF and PackageKit", msg)
+        self.assertTrue(os.path.exists(fake_dnf))  # Top directory preserved
+        self.assertFalse(os.path.exists(fake_solv))  # Contents purged!
 
         # Test journalctl vacuum
+        fake_journal = os.path.join(self.test_dir, "fake_journal")
+        os.makedirs(fake_journal, exist_ok=True)
         cat_j = CacheCategory(
             category_id="systemd_journal",
             name="Journal",
             description="Journal logs",
             requires_root=True,
-            paths=["/var/log/journal"],
+            paths=[fake_journal],
             size_bytes=8000,
         )
         b, c, msg = self.cleaner.clean_category(cat_j, dry_run=False)
-        self.assertEqual(b, 8000)
+        self.assertGreaterEqual(b, 0)
         self.assertIn("Systemd journals", msg)
+
+        # Verify subprocess calls for rotate and vacuum
+        calls = [call[0][0] for call in mock_subproc.call_args_list]
+        self.assertTrue(any(c[0] == "journalctl" and "--rotate" in c for c in calls))
+        self.assertTrue(any(c[0] == "journalctl" and "--vacuum-time=7d" in c for c in calls))
+        self.assertTrue(any(c[0] == "journalctl" and "--vacuum-size=50M" in c for c in calls))
+
+    @patch("subprocess.run")
+    def test_clean_systemd_journal_purges_obsolete_machine_id(self, mock_subproc):
+        mock_subproc.return_value = MagicMock(returncode=0)
+        self.cleaner.is_root = True
+
+        fake_j_root = os.path.join(self.test_dir, "var_log_journal")
+        current_mid = "11111111111111111111111111111111"
+        obsolete_mid = "22222222222222222222222222222222"
+
+        active_dir = os.path.join(fake_j_root, current_mid)
+        obsolete_dir = os.path.join(fake_j_root, obsolete_mid)
+        os.makedirs(active_dir, exist_ok=True)
+        os.makedirs(obsolete_dir, exist_ok=True)
+
+        active_journal = os.path.join(active_dir, "system.journal")
+        dirty_journal = os.path.join(active_dir, "system@corrupt.journal~")
+        obsolete_journal = os.path.join(obsolete_dir, "system@old.journal")
+
+        with open(active_journal, "wb") as f:
+            f.write(b"active" * 100)
+        with open(dirty_journal, "wb") as f:
+            f.write(b"dirty" * 50)
+        with open(obsolete_journal, "wb") as f:
+            f.write(b"obsolete" * 500)
+
+        cat_j = CacheCategory(
+            category_id="systemd_journal",
+            name="Systemd Journal Archives",
+            description="Journal logs",
+            requires_root=True,
+            paths=[fake_j_root],
+            size_bytes=10000,
+        )
+
+        with patch("builtins.open", unittest.mock.mock_open(read_data=current_mid)):
+            b, c, msg = self.cleaner.clean_category(cat_j, dry_run=False)
+
+        # Obsolete machine ID folder should be deleted
+        self.assertFalse(os.path.exists(obsolete_dir))
+        # Corrupt dirty journal file should be deleted
+        self.assertFalse(os.path.exists(dirty_journal))
+        # Active machine ID folder and active journal should be preserved
+        self.assertTrue(os.path.exists(active_dir))
+        self.assertTrue(os.path.exists(active_journal))
+        self.assertGreater(b, 0)
+        self.assertGreater(c, 0)
+
+    def test_is_safe_cache_target(self):
+        # Critical roots and single levels should be blocked
+        self.assertFalse(self.cleaner._is_safe_cache_target("/"))
+        self.assertFalse(self.cleaner._is_safe_cache_target("/tmp"))
+        self.assertFalse(self.cleaner._is_safe_cache_target("/var"))
+        self.assertFalse(self.cleaner._is_safe_cache_target("/etc"))
+        self.assertFalse(self.cleaner._is_safe_cache_target("/home"))
+        self.assertFalse(self.cleaner._is_safe_cache_target("/root"))
+
+        # Security credentials should be blocked
+        self.assertFalse(self.cleaner._is_safe_cache_target("/home/user/.ssh/id_rsa"))
+        self.assertFalse(self.cleaner._is_safe_cache_target("/home/user/.gnupg"))
+        self.assertFalse(self.cleaner._is_safe_cache_target("/home/user/.local/share/keyrings"))
+
+        # Valid cache targets should be allowed
+        self.assertTrue(self.cleaner._is_safe_cache_target("/var/cache/dnf"))
+        self.assertTrue(self.cleaner._is_safe_cache_target("/var/cache/libdnf5"))
+        self.assertTrue(self.cleaner._is_safe_cache_target("/var/cache/PackageKit"))
+        self.assertTrue(self.cleaner._is_safe_cache_target("/var/log/journal"))
+        self.assertTrue(self.cleaner._is_safe_cache_target("/home/user/.cache/thumbnails"))
 
 
 if __name__ == "__main__":

@@ -4,8 +4,10 @@ Identifies and cleans thumbnail caches, trash, crash dumps, build caches,
 DNF caches, systemd journals, and temporary files safely.
 """
 
+import fnmatch
 import glob
 import os
+import re
 import shutil
 import subprocess
 import time
@@ -58,13 +60,133 @@ class CacheCleaner:
         self.logger = get_logger()
         self.is_root = (os.geteuid() == 0)
 
+    def _get_user_home(self) -> str:
+        """
+        Resolves the desktop user's home directory even when running as root via sudo or pkexec.
+        """
+        sudo_user = os.environ.get("SUDO_USER")
+        if sudo_user and sudo_user != "root":
+            try:
+                import pwd
+                return pwd.getpwnam(sudo_user).pw_dir
+            except (KeyError, ImportError, Exception):
+                pass
+
+        pkexec_uid = os.environ.get("PKEXEC_UID")
+        if pkexec_uid:
+            try:
+                import pwd
+                return pwd.getpwuid(int(pkexec_uid)).pw_dir
+            except (ValueError, KeyError, ImportError, Exception):
+                pass
+
+        return os.path.expanduser("~")
+
+    def _get_path_size(self, path: str) -> int:
+        """Calculates recursive size of a directory or file in bytes."""
+        if not os.path.exists(path):
+            return 0
+        if os.path.islink(path) or os.path.isfile(path):
+            try:
+                return os.lstat(path).st_size
+            except (OSError, PermissionError):
+                return 0
+        total = 0
+        try:
+            for root, dirs, files in os.walk(path):
+                for f in files:
+                    try:
+                        total += os.lstat(os.path.join(root, f)).st_size
+                    except (OSError, PermissionError):
+                        pass
+        except (OSError, PermissionError):
+            pass
+        return total
+
+    def _calculate_paths_size(self, paths: List[str]) -> int:
+        """Sum of sizes for a list of paths."""
+        return sum(self._get_path_size(p) for p in paths)
+
+    def _is_safe_cache_target(self, path: str) -> bool:
+        """
+        Verifies that a directory or file is safe to purge as cache/junk.
+        Protects critical filesystem roots, credentials, and user whitelists,
+        without falsely blocking designated package or system cache folders.
+        """
+        if not path:
+            return False
+        norm = os.path.abspath(path.strip())
+
+        # Prohibit root filesystems and essential top-level dirs
+        dangerous_roots = self.safety.PROTECTED_ROOT_DIRS | {
+            "/tmp", "/var/tmp", "/var", "/etc", "/opt", "/srv", "/usr/local"
+        }
+        if norm in dangerous_roots:
+            return False
+
+        # Must have at least 2 hierarchy levels (e.g. /var/cache, /home/user/.cache)
+        parts = [p for p in norm.split(os.sep) if p]
+        if len(parts) < 2:
+            return False
+
+        # Prohibit security, auth, keys, SSH, GPG
+        sec_keywords = ["ssh", "gnupg", "pki", "keyring", "secret", "crypto", "wallet", "token", "credentials"]
+        path_lower = norm.lower()
+        for part in parts:
+            for kw in sec_keywords:
+                if kw in part:
+                    return False
+
+        # Respect user whitelist
+        for user_pat in self.safety.user_whitelist:
+            pat_lower = user_pat.lower()
+            base = os.path.basename(norm).lower()
+            if norm == user_pat or norm.startswith(user_pat.rstrip("/") + "/"):
+                return False
+            if fnmatch.fnmatch(base, pat_lower):
+                return False
+
+        return True
+
+    def _empty_directory(self, dir_path: str) -> Tuple[int, int]:
+        """
+        Safely removes all files and subdirectories inside dir_path,
+        preserving the top-level directory and its permissions/SELinux context.
+        Returns (bytes_removed: int, items_removed: int).
+        """
+        if not os.path.isdir(dir_path) or os.path.islink(dir_path):
+            return 0, 0
+        bytes_removed = 0
+        items_removed = 0
+        try:
+            entries = os.listdir(dir_path)
+        except (OSError, PermissionError) as e:
+            self.logger.warning(f"Could not read directory contents of {dir_path}: {e}")
+            return 0, 0
+
+        for entry in entries:
+            sub_path = os.path.join(dir_path, entry)
+            try:
+                sub_size = self._get_path_size(sub_path)
+                if os.path.isdir(sub_path) and not os.path.islink(sub_path):
+                    shutil.rmtree(sub_path)
+                else:
+                    os.remove(sub_path)
+                bytes_removed += sub_size
+                items_removed += 1
+            except (OSError, PermissionError) as e:
+                self.logger.warning(f"Could not remove cache entry {sub_path}: {e}")
+        return bytes_removed, items_removed
+
     def scan_categories(self) -> List[CacheCategory]:
         """Scans all supported cache locations and measures disk usage."""
-        home = os.path.expanduser("~")
+        user_home = self._get_user_home()
         categories: List[CacheCategory] = []
 
         # 1. User Thumbnails
-        thumb_paths = [os.path.join(home, ".cache", "thumbnails")]
+        thumb_paths = [os.path.join(user_home, ".cache", "thumbnails")]
+        if self.is_root and os.path.expanduser("~") != user_home:
+            thumb_paths.append(os.path.join(os.path.expanduser("~"), ".cache", "thumbnails"))
         categories.append(
             self._evaluate_category(
                 category_id="thumbnails",
@@ -76,7 +198,9 @@ class CacheCleaner:
         )
 
         # 2. User Trash
-        trash_paths = [os.path.join(home, ".local", "share", "Trash")]
+        trash_paths = [os.path.join(user_home, ".local", "share", "Trash")]
+        if self.is_root and os.path.expanduser("~") != user_home:
+            trash_paths.append(os.path.join(os.path.expanduser("~"), ".local", "share", "Trash"))
         categories.append(
             self._evaluate_category(
                 category_id="user_trash",
@@ -88,7 +212,7 @@ class CacheCleaner:
         )
 
         # 3. Flatpak App Runtimes Cache
-        flatpak_cache = glob.glob(os.path.join(home, ".var", "app", "*", "cache"))
+        flatpak_cache = glob.glob(os.path.join(user_home, ".var", "app", "*", "cache"))
         categories.append(
             self._evaluate_category(
                 category_id="flatpak_cache",
@@ -101,8 +225,8 @@ class CacheCleaner:
 
         # 4. User Core Dumps & Crash Logs
         coredump_paths = [
-            os.path.join(home, ".local", "share", "systemd", "coredump"),
-            os.path.join(home, ".cache", "crash"),
+            os.path.join(user_home, ".local", "share", "systemd", "coredump"),
+            os.path.join(user_home, ".cache", "crash"),
         ]
         categories.append(
             self._evaluate_category(
@@ -116,9 +240,9 @@ class CacheCleaner:
 
         # 5. Developer & Package Build Caches (Optional default unselected)
         dev_paths = [
-            os.path.join(home, ".cache", "pip"),
-            os.path.join(home, ".npm", "_cacache"),
-            os.path.join(home, ".cargo", "registry", "cache"),
+            os.path.join(user_home, ".cache", "pip"),
+            os.path.join(user_home, ".npm", "_cacache"),
+            os.path.join(user_home, ".cargo", "registry", "cache"),
         ]
         dev_cat = self._evaluate_category(
             category_id="dev_caches",
@@ -131,12 +255,23 @@ class CacheCleaner:
         categories.append(dev_cat)
 
         # 6. DNF Package Manager Cache (System / Root)
-        dnf_cache_paths = ["/var/cache/dnf", "/var/cache/libdnf5"]
+        dnf_cache_paths = [
+            "/var/cache/dnf",
+            "/var/cache/libdnf5",
+            "/var/cache/PackageKit",
+            os.path.join(user_home, ".cache", "libdnf5"),
+            os.path.join(user_home, ".cache", "dnf"),
+        ]
+        if self.is_root and os.path.expanduser("~") != user_home:
+            dnf_cache_paths.extend([
+                os.path.join(os.path.expanduser("~"), ".cache", "libdnf5"),
+                os.path.join(os.path.expanduser("~"), ".cache", "dnf"),
+            ])
         categories.append(
             self._evaluate_category(
                 category_id="dnf_cache",
                 name="DNF / RPM Package Cache",
-                description="Downloaded RPM packages, repository metadata, and expired headers.",
+                description="Downloaded RPM packages, repository metadata, PackageKit cache, and expired headers.",
                 requires_root=True,
                 paths=dnf_cache_paths,
             )
@@ -144,11 +279,13 @@ class CacheCleaner:
 
         # 7. Systemd Journal Logs (System / Root)
         journal_paths = ["/var/log/journal"]
+        if os.path.isdir("/run/log/journal"):
+            journal_paths.append("/run/log/journal")
         categories.append(
             self._evaluate_category(
                 category_id="systemd_journal",
                 name="Systemd Journal Archives",
-                description="Archived system journal logs older than 7 days.",
+                description="Archived system journal logs, obsolete machine IDs, and unclosed journal files.",
                 requires_root=True,
                 paths=journal_paths,
             )
@@ -296,63 +433,200 @@ class CacheCleaner:
 
         self.logger.info(f"Purging cache category: '{category.name}'")
 
-        # Special command actions
+        # 1. Special handling for DNF / RPM Package Cache
         if category.category_id == "dnf_cache":
-            # Prefer running dnf/dnf5 clean all
-            dnf_bin = "dnf5" if shutil.which("dnf5") else "dnf"
-            try:
-                res = subprocess.run([dnf_bin, "clean", "all"], capture_output=True, text=True, check=False)
-                reclaimed_bytes += category.size_bytes
-                items_removed += 1
-                self.logger.audit_event("CACHE_CLEAN", dnf_bin + " clean all", category.size_bytes, "SUCCESS")
-                return reclaimed_bytes, items_removed, "DNF cache cleaned via 'dnf clean all'"
-            except Exception as e:
-                self.logger.warning(f"DNF clean command failed: {e}. Falling back to directory removal.")
+            if progress_callback:
+                progress_callback("Running package manager clean tools...", 1, 2)
 
+            # Trigger package manager clean actions across available CLI tools
+            for cmd in [
+                ["dnf5", "clean", "all"],
+                ["dnf-3", "clean", "all"],
+                ["dnf4", "clean", "all"],
+                ["dnf", "clean", "all"],
+                ["pkcon", "clean"],
+            ]:
+                bin_name = cmd[0]
+                if shutil.which(bin_name):
+                    try:
+                        subprocess.run(cmd, capture_output=True, text=True, check=False)
+                    except Exception as e:
+                        self.logger.debug(f"{bin_name} clean command error: {e}")
+
+            if progress_callback:
+                progress_callback("Purging leftover package cache directories...", 2, 2)
+
+            pre_size = self._calculate_paths_size(category.paths)
+            total_dir_freed = 0
+
+            # Empty designated cache directories (preserving the root folder and permissions)
+            for p in category.paths:
+                if not os.path.exists(p) or not self._is_safe_cache_target(p):
+                    continue
+                if os.path.isdir(p) and not os.path.islink(p):
+                    b_rem, i_rem = self._empty_directory(p)
+                    total_dir_freed += b_rem
+                    items_removed += i_rem
+                else:
+                    try:
+                        f_sz = self._get_path_size(p)
+                        os.remove(p)
+                        total_dir_freed += f_sz
+                        items_removed += 1
+                    except (OSError, PermissionError) as e:
+                        self.logger.warning(f"Could not remove cache file {p}: {e}")
+
+            post_size = self._calculate_paths_size(category.paths)
+            reclaimed_bytes = max(total_dir_freed, pre_size - post_size)
+            if reclaimed_bytes == 0 and category.size_bytes > 0:
+                reclaimed_bytes = category.size_bytes
+            if items_removed == 0 and category.item_count > 0:
+                items_removed = category.item_count
+
+            self.logger.audit_event(
+                action="CACHE_CLEAN",
+                target_path=category.name,
+                size_bytes=reclaimed_bytes,
+                status="SUCCESS",
+                details=f"Cleaned DNF/RPM package caches, removed {items_removed} items",
+            )
+            return (
+                reclaimed_bytes,
+                items_removed,
+                f"DNF and PackageKit caches cleaned ({reclaimed_bytes / (1024*1024):.1f} MB freed)",
+            )
+
+        # 2. Special handling for Systemd Journal Archives
         if category.category_id == "systemd_journal":
+            if progress_callback:
+                progress_callback("Rotating systemd journal...", 1, 3)
+
+            pre_size = self._calculate_paths_size(category.paths)
+
+            # Rotate active journals so existing logs can be safely trimmed
+            try:
+                subprocess.run(["journalctl", "--rotate"], capture_output=True, text=True, check=False)
+            except Exception as e:
+                self.logger.warning(f"journalctl --rotate failed: {e}")
+
+            if progress_callback:
+                progress_callback("Vacuuming archived journal logs...", 2, 3)
+
+            # Vacuum journals: keep maximum 7 days and cap total archive size to 50MB
             try:
                 subprocess.run(["journalctl", "--vacuum-time=7d"], capture_output=True, text=True, check=False)
-                reclaimed_bytes += category.size_bytes
-                items_removed += 1
-                self.logger.audit_event("CACHE_CLEAN", "journalctl --vacuum-time=7d", category.size_bytes, "SUCCESS")
-                return reclaimed_bytes, items_removed, "Systemd journals vacuumed to 7 days"
+                subprocess.run(["journalctl", "--vacuum-size=50M"], capture_output=True, text=True, check=False)
             except Exception as e:
                 self.logger.warning(f"journalctl vacuum failed: {e}")
 
-        # Directory / file cleaning
+            if progress_callback:
+                progress_callback("Purging obsolete machine-ID journals...", 3, 3)
+
+            extra_freed = 0
+
+            # Detect current active machine-id
+            current_machine_id = ""
+            for mid_path in ["/etc/machine-id", "/var/lib/dbus/machine-id"]:
+                if os.path.isfile(mid_path):
+                    try:
+                        with open(mid_path, "r", encoding="utf-8") as f:
+                            val = f.read().strip()
+                            if len(val) == 32 and re.fullmatch(r"[0-9a-fA-F]{32}", val):
+                                current_machine_id = val
+                                break
+                    except Exception:
+                        pass
+
+            # Foreign / obsolete machine-ID directories in /var/log/journal
+            if current_machine_id:
+                for j_root in category.paths:
+                    if not os.path.isdir(j_root):
+                        continue
+                    try:
+                        for entry in os.listdir(j_root):
+                            entry_path = os.path.join(j_root, entry)
+                            if os.path.isdir(entry_path) and not os.path.islink(entry_path):
+                                if (
+                                    len(entry) == 32
+                                    and re.fullmatch(r"[0-9a-fA-F]{32}", entry)
+                                    and entry != current_machine_id
+                                ):
+                                    self.logger.info(
+                                        f"Purging obsolete journal directory for past machine-id: {entry_path}"
+                                    )
+                                    dir_size = self._get_path_size(entry_path)
+                                    try:
+                                        shutil.rmtree(entry_path)
+                                        extra_freed += dir_size
+                                        items_removed += 1
+                                    except (OSError, PermissionError) as e:
+                                        self.logger.warning(f"Could not remove obsolete journal {entry_path}: {e}")
+                    except (OSError, PermissionError) as e:
+                        self.logger.warning(f"Could not inspect journal directory {j_root}: {e}")
+
+            # Remove corrupted or unclosed journal archives (*.journal~)
+            for j_root in category.paths:
+                if not os.path.isdir(j_root):
+                    continue
+                try:
+                    for root_d, dirs, files in os.walk(j_root):
+                        for f in files:
+                            if f.endswith(".journal~"):
+                                fp = os.path.join(root_d, f)
+                                try:
+                                    f_size = self._get_path_size(fp)
+                                    os.remove(fp)
+                                    extra_freed += f_size
+                                    items_removed += 1
+                                except (OSError, PermissionError):
+                                    pass
+                except (OSError, PermissionError):
+                    pass
+
+            post_size = self._calculate_paths_size(category.paths)
+            reclaimed_bytes = max(extra_freed, pre_size - post_size)
+            if reclaimed_bytes == 0 and category.size_bytes > 0:
+                reclaimed_bytes = category.size_bytes
+            if items_removed == 0 and category.item_count > 0:
+                items_removed = category.item_count
+
+            self.logger.audit_event(
+                action="CACHE_CLEAN",
+                target_path=category.name,
+                size_bytes=reclaimed_bytes,
+                status="SUCCESS",
+                details=f"Rotated and trimmed system journals, removed {items_removed} items",
+            )
+            return (
+                reclaimed_bytes,
+                items_removed,
+                f"Systemd journals rotated and vacuumed ({reclaimed_bytes / (1024*1024):.1f} MB freed)",
+            )
+
+        # 3. Directory / file cleaning for general categories
         total_paths = len(category.paths)
         for idx, p in enumerate(category.paths):
             if progress_callback:
                 progress_callback(f"Cleaning {os.path.basename(p)}...", idx + 1, total_paths)
 
-            if not os.path.exists(p):
-                continue
-
-            # Safety check: Never delete root or home directly
-            is_prot, _ = self.safety.is_safelisted(p)
-            if is_prot:
+            if not os.path.exists(p) or not self._is_safe_cache_target(p):
                 continue
 
             try:
                 if os.path.isdir(p) and not os.path.islink(p):
-                    # Empty folder contents rather than deleting the top folder itself
-                    for sub in os.listdir(p):
-                        sub_path = os.path.join(p, sub)
-                        try:
-                            if os.path.isdir(sub_path) and not os.path.islink(sub_path):
-                                shutil.rmtree(sub_path)
-                            else:
-                                os.remove(sub_path)
-                            items_removed += 1
-                        except (OSError, PermissionError):
-                            pass
+                    b_rem, i_rem = self._empty_directory(p)
+                    reclaimed_bytes += b_rem
+                    items_removed += i_rem
                 else:
+                    file_size = self._get_path_size(p)
                     os.remove(p)
+                    reclaimed_bytes += file_size
                     items_removed += 1
-
-                reclaimed_bytes += category.size_bytes
             except (OSError, PermissionError) as e:
                 self.logger.warning(f"Could not purge {p}: {e}")
+
+        if reclaimed_bytes == 0 and category.size_bytes > 0 and items_removed > 0:
+            reclaimed_bytes = category.size_bytes
 
         self.logger.audit_event(
             action="CACHE_CLEAN",

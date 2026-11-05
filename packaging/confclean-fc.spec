@@ -1,6 +1,6 @@
 Name:           confclean-fc
 Version:        1.1.4
-Release:        10%{?dist}
+Release:        11%{?dist}
 Summary:        Fedora & RPM system cleaner and orphan configuration purger
 
 License:        GPL-3.0-or-later
@@ -145,6 +145,10 @@ fi
 %{_datadir}/polkit-1/actions/io.github.confclean_fc.policy
 
 %changelog
+* Thu Nov 05 2026 James Turansky <turajb@gmail.com> - 1.1.4-11
+- Set transparent background on QLabel, QCheckBox, and QRadioButton to eliminate mismatched text bounding boxes
+- Align UI theme rendering with ConfTune FC Adwaita dark styling
+
 * Wed Nov 04 2026 James Turansky <turajb@gmail.com> - 1.1.4-10
 - Set desktopFileName and applicationName to confclean-fc for GNOME Wayland app_id icon mapping
 - Add StartupWMClass=confclean-fc to desktop launcher

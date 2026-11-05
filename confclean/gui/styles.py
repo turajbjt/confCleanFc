@@ -59,7 +59,17 @@ QFrame#header_bar {
     padding: 10px 16px;
 }
 
+/* Typography & Labels - Transparent background so text blends seamlessly into cards, headers, and dialogs */
+QLabel {
+    background-color: transparent;
+}
+
+QCheckBox, QRadioButton {
+    background-color: transparent;
+}
+
 QLabel#app_title {
+    background-color: transparent;
     font-size: 18px;
     font-weight: bold;
     color: #ffffff;
@@ -199,6 +209,7 @@ QComboBox QAbstractItemView {
 QCheckBox {
     spacing: 8px;
     color: #f6f8fa;
+    background-color: transparent;
 }
 
 QCheckBox::indicator {

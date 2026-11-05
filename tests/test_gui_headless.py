@@ -633,6 +633,70 @@ class TestGUIHeadless(unittest.TestCase):
         tab._select_all_visible()
         self.assertTrue(tab.suggestions[0].is_selected)
 
+    def test_package_tab_safelist_actions(self):
+        from confclean.core.safelist import SafetyEngine
+        import tempfile, shutil
+        tmp_conf = tempfile.mkdtemp()
+        try:
+            safety = SafetyEngine(config_dir=tmp_conf)
+            pkg_mgr = PackageManager(safety=safety)
+            tab = PackageTab(pkg_mgr, safety=safety)
+
+            s_retired = PackageSuggestion(
+                name="dead-app",
+                version="1.0",
+                release="1.fc44",
+                arch="x86_64",
+                size_bytes=1000,
+                summary="A retired application",
+                category="repo_orphan",
+                reason="Retired package",
+                is_protected=False,
+                is_selected=True,
+            )
+            tab.suggestions = [s_retired]
+            tab._populate_table()
+
+            # Row initially checkable and selected
+            chk = tab.table.item(0, 0)
+            self.assertTrue(chk.flags() & Qt.ItemFlag.ItemIsUserCheckable)
+            self.assertEqual(chk.checkState(), Qt.CheckState.Checked)
+
+            # 1. Safelist via _add_to_safelist
+            with patch("PyQt6.QtWidgets.QMessageBox.information") as mock_info:
+                tab._add_to_safelist(s_retired)
+                self.assertTrue(s_retired.is_protected)
+                self.assertFalse(s_retired.is_selected)
+                self.assertIn("User safelist match", s_retired.reason)
+                self.assertTrue(safety.is_package_safelisted("dead-app")[0])
+
+                # Table updated: checkbox disabled & unchecked
+                chk_after = tab.table.item(0, 0)
+                self.assertFalse(chk_after.flags() & Qt.ItemFlag.ItemIsUserCheckable)
+                self.assertEqual(chk_after.checkState(), Qt.CheckState.Unchecked)
+
+            # 2. Context Menu generation
+            with patch("PyQt6.QtWidgets.QMenu.exec") as mock_exec:
+                tab._show_context_menu(tab.table.visualItemRect(chk_after).center())
+                mock_exec.assert_called_once()
+
+            # 3. Remove from safelist
+            with patch("PyQt6.QtWidgets.QMessageBox.information"):
+                tab._remove_from_safelist(s_retired)
+                self.assertFalse(s_retired.is_protected)
+                self.assertTrue(s_retired.is_selected)
+                self.assertFalse(safety.is_package_safelisted("dead-app")[0])
+
+            # 4. Safelist Selected batch button
+            s_retired.is_selected = True
+            with patch("PyQt6.QtWidgets.QMessageBox.information"):
+                tab._safelist_selected_packages()
+                self.assertTrue(s_retired.is_protected)
+                self.assertFalse(s_retired.is_selected)
+                self.assertTrue(safety.is_package_safelisted("dead-app")[0])
+        finally:
+            shutil.rmtree(tmp_conf, ignore_errors=True)
+
     def test_package_tab_selinux_and_cache_maintenance(self):
         from confclean.core.selinux_manager import SELinuxManager
         from PyQt6.QtWidgets import QMessageBox

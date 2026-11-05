@@ -1,6 +1,6 @@
 Name:           confclean-fc
 Version:        1.1.4
-Release:        12%{?dist}
+Release:        13%{?dist}
 Summary:        Fedora & RPM system cleaner and orphan configuration purger
 
 License:        GPL-3.0-or-later
@@ -145,6 +145,13 @@ fi
 %{_datadir}/polkit-1/actions/io.github.confclean_fc.policy
 
 %changelog
+* Thu Nov 05 2026 James Turansky <turajb@gmail.com> - 1.1.4-13
+- Add package and system safelisting support to prevent accidental removal of retired packages, dependencies, and kernels
+- Add right-click context menu and batch 'Safelist Selected' button to Packages & System tab
+- Support package names, wildcard patterns, and paths in custom safelist (~/.config/confclean-fc/custom_whitelist.json)
+- Add CLI safelist management commands (--safelist, --safelist-add, --safelist-remove)
+- Defense-in-depth safety assertion ensuring protected packages are never included in DNF, Flatpak, or Snap removal commands
+
 * Thu Nov 05 2026 James Turansky <turajb@gmail.com> - 1.1.4-12
 - Fix startup crash caused by duplicate concurrent scan and premature QThread garbage collection
 - Implement BaseWorker global thread retention to prevent SIGABRT across all asynchronous tasks

@@ -12,6 +12,7 @@ import subprocess
 from typing import Callable, Dict, List, Optional, Tuple
 
 from confclean.core.logger import get_logger
+from confclean.core.safelist import SafetyEngine
 
 
 class PackageSuggestion:
@@ -80,8 +81,9 @@ class PackageSuggestion:
 class PackageManager:
     """Detects and safely removes unneeded packages, old kernels, and duplicates."""
 
-    def __init__(self):
+    def __init__(self, safety: Optional[SafetyEngine] = None):
         self.logger = get_logger()
+        self.safety = safety or SafetyEngine()
         self.dnf_bin = "dnf5" if shutil.which("dnf5") else ("dnf" if shutil.which("dnf") else "rpm")
         self.is_dnf5 = (self.dnf_bin == "dnf5")
         self.is_root = (os.geteuid() == 0)
@@ -227,35 +229,48 @@ class PackageManager:
 
                     info = pkg_map.get(raw.lower()) or pkg_map.get(clean_name.lower()) or pkg_map.get(base_name.lower())
                     if info:
-                        results.append(
-                            PackageSuggestion(
-                                name=info["name"],
-                                version=info["version"],
-                                release=info["release"],
-                                arch=info["arch"],
-                                size_bytes=info["size"],
-                                summary=info["summary"],
-                                category="unneeded_dep",
-                                reason="Installed as dependency for removed software (autoremove candidate)",
-                                is_protected=False,
-                                is_selected=True,
-                            )
-                        )
+                        pname = info["name"]
+                        pver = info["version"]
+                        prel = info["release"]
+                        parch = info["arch"]
+                        psize = info["size"]
+                        psummary = info["summary"]
+                        pnevra = info.get("nevra", "")
+                        default_reason = "Installed as dependency for removed software (autoremove candidate)"
                     else:
-                        results.append(
-                            PackageSuggestion(
-                                name=base_name,
-                                version="installed",
-                                release="",
-                                arch="x86_64",
-                                size_bytes=0,
-                                summary="Unneeded dependency package",
-                                category="unneeded_dep",
-                                reason="Identified by DNF as unneeded leaf package",
-                                is_protected=False,
-                                is_selected=True,
-                            )
+                        pname = base_name
+                        pver = "installed"
+                        prel = ""
+                        parch = "x86_64"
+                        psize = 0
+                        psummary = "Unneeded dependency package"
+                        pnevra = ""
+                        default_reason = "Identified by DNF as unneeded leaf package"
+
+                    is_prot, prot_reason = self.safety.is_package_safelisted(pname, pnevra)
+                    if is_prot:
+                        is_protected = True
+                        is_selected = False
+                        reason = f"PROTECTED: {prot_reason}"
+                    else:
+                        is_protected = False
+                        is_selected = True
+                        reason = default_reason
+
+                    results.append(
+                        PackageSuggestion(
+                            name=pname,
+                            version=pver,
+                            release=prel,
+                            arch=parch,
+                            size_bytes=psize,
+                            summary=psummary,
+                            category="unneeded_dep",
+                            reason=reason,
+                            is_protected=is_protected,
+                            is_selected=is_selected,
                         )
+                    )
         except Exception as e:
             self.logger.warning(f"Error querying unneeded packages: {e}")
 
@@ -383,22 +398,40 @@ class PackageManager:
                                 )
                             )
                     else:
-                        # Older kernel: suggest removal!
+                        # Older kernel: suggest removal unless safelisted by user
                         for p in pkgs:
-                            results.append(
-                                PackageSuggestion(
-                                    name=p["name"],
-                                    version=p["version"],
-                                    release=p["release"],
-                                    arch=p["arch"],
-                                    size_bytes=p["size"],
-                                    summary=p["summary"],
-                                    category="old_kernel",
-                                    reason=f"Old unused kernel ({vr}). Booted kernel is {running_kernel}.",
-                                    is_protected=False,
-                                    is_selected=True,
+                            nevra_str = p.get("nevra", "")
+                            is_prot, prot_reason = self.safety.is_package_safelisted(p["name"], nevra_str, check_core=False)
+                            if is_prot:
+                                results.append(
+                                    PackageSuggestion(
+                                        name=p["name"],
+                                        version=p["version"],
+                                        release=p["release"],
+                                        arch=p["arch"],
+                                        size_bytes=p["size"],
+                                        summary=p["summary"],
+                                        category="old_kernel",
+                                        reason=f"PROTECTED: {prot_reason}",
+                                        is_protected=True,
+                                        is_selected=False,
+                                    )
                                 )
-                            )
+                            else:
+                                results.append(
+                                    PackageSuggestion(
+                                        name=p["name"],
+                                        version=p["version"],
+                                        release=p["release"],
+                                        arch=p["arch"],
+                                        size_bytes=p["size"],
+                                        summary=p["summary"],
+                                        category="old_kernel",
+                                        reason=f"Old unused kernel ({vr}). Booted kernel is {running_kernel}.",
+                                        is_protected=False,
+                                        is_selected=True,
+                                    )
+                                )
 
         except Exception as e:
             self.logger.warning(f"Error querying kernel packages: {e}")
@@ -427,20 +460,13 @@ class PackageManager:
                     clean = re.sub(r"-(\d+):", "-", raw)
                     info = pkg_map.get(raw.lower()) or pkg_map.get(clean.lower())
                     if info:
-                        results.append(
-                            PackageSuggestion(
-                                name=info["name"],
-                                version=info["version"],
-                                release=info["release"],
-                                arch=info["arch"],
-                                size_bytes=info["size"],
-                                summary=info["summary"],
-                                category="duplicate",
-                                reason="Duplicate package version installed simultaneously",
-                                is_protected=False,
-                                is_selected=True,
-                            )
-                        )
+                        pname = info["name"]
+                        pver = info["version"]
+                        prel = info["release"]
+                        parch = info["arch"]
+                        psize = info["size"]
+                        psummary = info["summary"]
+                        pnevra = info.get("nevra", "")
                     else:
                         m_pkg = re.match(r"^(.+?)-([0-9][^-]*)-([0-9].*)\.([^.]+)$", clean)
                         if m_pkg:
@@ -450,20 +476,25 @@ class PackageManager:
                             pver = "duplicate"
                             prel = ""
                             parch = "x86_64"
-                        results.append(
-                            PackageSuggestion(
-                                name=pname,
-                                version=pver,
-                                release=prel,
-                                arch=parch,
-                                size_bytes=0,
-                                summary="Duplicate package version",
-                                category="duplicate",
-                                reason="Duplicate package version installed simultaneously",
-                                is_protected=False,
-                                is_selected=True,
-                            )
+                        psize = 0
+                        psummary = "Duplicate package version"
+                        pnevra = clean
+
+                    is_prot, prot_reason = self.safety.is_package_safelisted(pname, pnevra)
+                    results.append(
+                        PackageSuggestion(
+                            name=pname,
+                            version=pver,
+                            release=prel,
+                            arch=parch,
+                            size_bytes=psize,
+                            summary=psummary,
+                            category="duplicate",
+                            reason=f"PROTECTED: {prot_reason}" if is_prot else "Duplicate package version installed simultaneously",
+                            is_protected=is_prot,
+                            is_selected=not is_prot,
                         )
+                    )
         except Exception as e:
             self.logger.warning(f"Error querying duplicate packages: {e}")
 
@@ -497,6 +528,7 @@ class PackageManager:
                         ref_id = parts[0]
                         branch = parts[1]
                         if "." in ref_id and not ref_id.startswith("["):
+                            is_prot, prot_reason = self.safety.is_package_safelisted(ref_id)
                             results.append(
                                 PackageSuggestion(
                                     name=ref_id,
@@ -506,9 +538,9 @@ class PackageManager:
                                     size_bytes=0,
                                     summary="Unused Flatpak runtime",
                                     category="flatpak_unused",
-                                    reason="Unused Flatpak runtime left over after application removal",
-                                    is_protected=False,
-                                    is_selected=True,
+                                    reason=f"PROTECTED: {prot_reason}" if is_prot else "Unused Flatpak runtime left over after application removal",
+                                    is_protected=is_prot,
+                                    is_selected=not is_prot,
                                 )
                             )
         except Exception as e:
@@ -549,6 +581,8 @@ class PackageManager:
                             except OSError:
                                 size = 0
 
+                            full_spec = f"{name} --revision={rev}" if rev else name
+                            is_prot, prot_reason = self.safety.is_package_safelisted(name, full_spec)
                             results.append(
                                 PackageSuggestion(
                                     name=name,
@@ -558,9 +592,9 @@ class PackageManager:
                                     size_bytes=size,
                                     summary=f"Disabled Snap revision ({notes})",
                                     category="snap_unused",
-                                    reason=f"Disabled Snap revision {rev} superseded by newer revision",
-                                    is_protected=False,
-                                    is_selected=True,
+                                    reason=f"PROTECTED: {prot_reason}" if is_prot else f"Disabled Snap revision {rev} superseded by newer revision",
+                                    is_protected=is_prot,
+                                    is_selected=not is_prot,
                                 )
                             )
         except Exception as e:
@@ -576,24 +610,6 @@ class PackageManager:
         results: List[PackageSuggestion] = []
         if self.dnf_bin not in ["dnf5", "dnf"]:
             return results
-
-        CORE_PROTECTED = {
-            "confclean-fc",
-            "confclean",
-            "glibc",
-            "systemd",
-            "kernel",
-            "kernel-core",
-            "rpm",
-            "dnf",
-            "dnf5",
-            "setup",
-            "basesystem",
-            "filesystem",
-            "bash",
-            "coreutils",
-            "selinux-policy",
-        }
 
         # Try cache-only mode (-C) first for fast execution without network roundtrips
         cmd_cache = [self.dnf_bin, "repoquery", "-C", "--extras"]
@@ -649,19 +665,12 @@ class PackageManager:
                     psize = 0
                     psummary = "Retired package (repo extra)"
 
-                # Safety checks
-                pname_lower = pname.lower()
-                is_confclean = pname_lower in ("confclean-fc", "confclean")
-                is_core = pname_lower in CORE_PROTECTED or pname_lower.startswith("kernel-core")
-
-                if is_confclean:
+                # Safety checks via SafetyEngine
+                is_prot, prot_reason = self.safety.is_package_safelisted(pname, clean)
+                if is_prot:
                     is_protected = True
                     is_selected = False
-                    reason = "PROTECTED: ConfClean FC core application"
-                elif is_core:
-                    is_protected = True
-                    is_selected = False
-                    reason = f"PROTECTED: Core system package ({pname})"
+                    reason = f"PROTECTED: {prot_reason}"
                 else:
                     is_protected = False
                     is_selected = True
@@ -690,7 +699,12 @@ class PackageManager:
 
     def get_removal_commands(self, packages: List[PackageSuggestion]) -> List[List[str]]:
         """Returns the list of individual raw CLI commands to remove selected packages/runtimes."""
-        active_pkgs = [p for p in packages if not p.is_protected and p.is_selected]
+        active_pkgs = [
+            p for p in packages
+            if not p.is_protected
+            and p.is_selected
+            and not (self.safety and self.safety.is_package_safelisted(p.name, getattr(p, "removal_spec", ""))[0])
+        ]
         if not active_pkgs:
             return []
 

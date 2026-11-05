@@ -32,6 +32,9 @@ Examples:
   python3 main.py --restore list           # List all past backup archives
   python3 main.py --restore <ID>           # Restore files from a specific backup
   python3 main.py --reset-app firefox      # Reset app settings with automatic backup
+  python3 main.py --safelist               # List all protected packages, paths & patterns
+  python3 main.py --safelist-add <NAME>    # Safelist a package name (e.g. retired app) or pattern
+  python3 main.py --safelist-remove <NAME> # Remove an entry from custom safelist
   python3 main.py --selinux-fix-boot       # Schedule SELinux file context fix on next boot
   python3 main.py --selinux-status         # Check SELinux status & next-boot relabeling
         """,
@@ -57,6 +60,9 @@ Examples:
     parser.add_argument("--restore", nargs="?", const="list", help="List or restore pre-clean backup archives")
     parser.add_argument("--reset-app", metavar="APP", help="Reset an application to factory install defaults (dry run by default unless --apply)")
     parser.add_argument("--diff", metavar="FILE", help="View unified diff between an .rpmnew or .rpmsave file and the active system config")
+    parser.add_argument("--safelist", "--whitelist", action="store_true", help="List all protected safelist entries (packages, paths, patterns)")
+    parser.add_argument("--safelist-add", "--whitelist-add", metavar="ENTRY", help="Add a package name, directory path, or pattern to the safelist")
+    parser.add_argument("--safelist-remove", "--whitelist-remove", metavar="ENTRY", help="Remove an entry from the safelist")
     parser.add_argument("-f", "--force", action="store_true", help="Skip confirmation prompts in CLI mode")
 
     args = parser.parse_args()
@@ -81,6 +87,9 @@ Examples:
         args.symlinks_only,
         args.selinux_fix_boot,
         args.selinux_status,
+        args.safelist,
+        bool(args.safelist_add),
+        bool(args.safelist_remove),
         (args.restore is not None),
         bool(args.reset_app),
         bool(args.diff),

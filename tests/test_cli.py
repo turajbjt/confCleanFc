@@ -810,6 +810,73 @@ class TestCLI(unittest.TestCase):
         self.assertIn("Purged DNF cache", out)
         mock_cc.clean_category.assert_called_once_with(cat_dnf, dry_run=False)
 
+    def test_cli_safelist_management(self):
+        # 1. Add to safelist
+        args_add = argparse.Namespace(
+            scan=False, clean=False, dry_run=False, cache=False, packages=False,
+            safelist_add="miracle-wm", safelist_remove=None, safelist=False,
+        )
+        with patch("sys.stdout", new_callable=io.StringIO) as mock_stdout:
+            run_cli(args_add, safety=self.mock_safety)
+            out = mock_stdout.getvalue()
+        self.mock_safety.add_user_whitelist.assert_called_with("miracle-wm")
+        self.assertIn("Successfully added 'miracle-wm' to custom protected safelist", out)
+
+        # 2. List safelist
+        self.mock_safety.user_whitelist = ["miracle-wm", "/opt/custom_dir", "my_pattern*"]
+        args_list = argparse.Namespace(
+            scan=False, clean=False, dry_run=False, cache=False, packages=False,
+            safelist_add=None, safelist_remove=None, safelist=True,
+        )
+        with patch("sys.stdout", new_callable=io.StringIO) as mock_stdout:
+            run_cli(args_list, safety=self.mock_safety)
+            out = mock_stdout.getvalue()
+        self.assertIn("miracle-wm", out)
+        self.assertIn("/opt/custom_dir", out)
+        self.assertIn("my_pattern*", out)
+
+        # 3. Remove from safelist
+        args_rem = argparse.Namespace(
+            scan=False, clean=False, dry_run=False, cache=False, packages=False,
+            safelist_add=None, safelist_remove="miracle-wm", safelist=False,
+        )
+        with patch("sys.stdout", new_callable=io.StringIO) as mock_stdout:
+            run_cli(args_rem, safety=self.mock_safety)
+            out = mock_stdout.getvalue()
+        self.mock_safety.remove_user_whitelist.assert_called_with("miracle-wm")
+        self.assertIn("Successfully removed 'miracle-wm' from custom protected safelist", out)
+
+    def test_cli_packages_with_safelist_protection(self):
+        s_safe = PackageSuggestion(
+            name="retired-kept-app",
+            version="1.0",
+            release="1.fc44",
+            arch="x86_64",
+            size_bytes=1000,
+            summary="Kept retired app",
+            category="repo_orphan",
+            reason="PROTECTED: User safelist match: 'retired-kept-app'",
+            is_protected=True,
+            is_selected=False,
+        )
+        mock_pkg_mgr = MagicMock()
+        mock_pkg_mgr.scan_retired_packages.return_value = [s_safe]
+        mock_pkg_mgr.get_removal_command.return_value = []
+
+        args = argparse.Namespace(
+            scan=False, clean=True, dry_run=True, apply=False, cache=False, packages=True,
+            retired_only=True, clean_cache=False, symlinks_only=False, retired=False, symlinks=False,
+            selinux_status=False, selinux_fix_boot=False, restore=None, reset_app=None, force=True, no_backup=False,
+            safelist=False, safelist_add=None, safelist_remove=None,
+        )
+        with patch("sys.stdout", new_callable=io.StringIO) as mock_stdout:
+            run_cli(args, pkg_mgr=mock_pkg_mgr, safety=self.mock_safety)
+            out = mock_stdout.getvalue()
+
+        self.assertIn("retired-kept-app", out)
+        self.assertIn("YES", out)  # Protected column says YES
+        self.assertIn("No removable retired package(s) selected", out)
+
 
 if __name__ == "__main__":
     unittest.main()

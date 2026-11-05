@@ -15,6 +15,7 @@ from PyQt6.QtWidgets import (
     QLabel,
     QLineEdit,
     QListWidget,
+    QListWidgetItem,
     QMessageBox,
     QPushButton,
     QVBoxLayout,
@@ -109,13 +110,13 @@ class SettingsTab(QWidget):
         wl_layout.setContentsMargins(14, 12, 14, 12)
         wl_layout.setSpacing(10)
 
-        wl_title = QLabel("Custom Protected Whitelist (Never Clean):")
+        wl_title = QLabel("Custom Protected Safelist (Never Clean or Remove):")
         wl_title.setStyleSheet("font-size: 15px; font-weight: bold; color: #ffffff;")
         wl_layout.addWidget(wl_title)
 
         wl_desc = QLabel(
-            "Add folder names, absolute file paths, or wildcard patterns (e.g. 'my_custom_app*') "
-            "that ConfClean FC must never delete under any circumstance."
+            "Add package names (e.g. 'miracle-wm', 'compat-*'), application config directories, "
+            "file paths, or wildcard patterns that ConfClean FC must never delete or remove under any circumstance."
         )
         wl_desc.setStyleSheet("color: #a0a0a0; font-size: 13px;")
         wl_layout.addWidget(wl_desc)
@@ -123,10 +124,10 @@ class SettingsTab(QWidget):
         # Input and Add button
         add_layout = QHBoxLayout()
         self.txt_whitelist_input = QLineEdit()
-        self.txt_whitelist_input.setPlaceholderText("Enter folder name, absolute path, or pattern...")
+        self.txt_whitelist_input.setPlaceholderText("Enter package name, folder name, path, or pattern (e.g. 'miracle-wm', 'my_app*')...")
         add_layout.addWidget(self.txt_whitelist_input, stretch=2)
 
-        self.btn_add_whitelist = QPushButton("➕ Add to Whitelist")
+        self.btn_add_whitelist = QPushButton("➕ Add to Safelist")
         self.btn_add_whitelist.clicked.connect(self._add_to_whitelist)
         add_layout.addWidget(self.btn_add_whitelist)
 
@@ -137,7 +138,7 @@ class SettingsTab(QWidget):
         wl_layout.addWidget(self.whitelist_list, stretch=1)
 
         btn_row = QHBoxLayout()
-        self.btn_remove_whitelist = QPushButton("Remove Selected Whitelist Entry")
+        self.btn_remove_whitelist = QPushButton("Remove Selected Safelist Entry")
         self.btn_remove_whitelist.clicked.connect(self._remove_from_whitelist)
         btn_row.addWidget(self.btn_remove_whitelist)
         btn_row.addStretch()
@@ -182,7 +183,14 @@ class SettingsTab(QWidget):
             self.safety._load_user_whitelist()
         self.whitelist_list.clear()
         for p in getattr(self.safety, "user_whitelist", []):
-            self.whitelist_list.addItem(p)
+            item = QListWidgetItem(p)
+            if p.startswith("/"):
+                item.setToolTip(f"File/Directory Path: {p}")
+            elif any(c in p for c in ["*", "?", "["]):
+                item.setToolTip(f"Wildcard Pattern: {p}")
+            else:
+                item.setToolTip(f"Package Name or Application Config: {p}")
+            self.whitelist_list.addItem(item)
 
     def _refresh_whitelist_ui(self):
         self.refresh_whitelist()
@@ -198,7 +206,7 @@ class SettingsTab(QWidget):
         if self.safety.add_user_whitelist(item):
             self.txt_whitelist_input.clear()
             self._refresh_whitelist_ui()
-            QMessageBox.information(self, "Whitelist Updated", f"Added '{item}' to custom whitelist.")
+            QMessageBox.information(self, "Safelist Updated", f"Added '{item}' to custom safelist.")
 
     def _remove_from_whitelist(self):
         cur = self.whitelist_list.currentItem()
@@ -207,7 +215,7 @@ class SettingsTab(QWidget):
         text = cur.text()
         if self.safety.remove_user_whitelist(text):
             self._refresh_whitelist_ui()
-            QMessageBox.information(self, "Whitelist Updated", f"Removed '{text}' from custom whitelist.")
+            QMessageBox.information(self, "Safelist Updated", f"Removed '{text}' from custom safelist.")
 
     def _relaunch_as_root(self):
         if os.geteuid() == 0:

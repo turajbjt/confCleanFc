@@ -75,7 +75,7 @@ def run_cli(
     def get_pkg_mgr():
         nonlocal pkg_mgr
         if pkg_mgr is None:
-            pkg_mgr = PackageManager()
+            pkg_mgr = PackageManager(safety=get_safety())
         return pkg_mgr
 
     def get_selinux_mgr():
@@ -107,6 +107,38 @@ def run_cli(
             else:
                 print(line)
         print("=" * 60)
+        return
+
+    # Safelist Management
+    if getattr(args, "safelist_add", None):
+        safety = get_safety()
+        entry = args.safelist_add.strip()
+        if safety.add_user_whitelist(entry):
+            print(f"Successfully added '{entry}' to custom protected safelist.")
+        else:
+            print(f"'{entry}' is already present in custom protected safelist.")
+        return
+
+    if getattr(args, "safelist_remove", None):
+        safety = get_safety()
+        entry = args.safelist_remove.strip()
+        if safety.remove_user_whitelist(entry):
+            print(f"Successfully removed '{entry}' from custom protected safelist.")
+        else:
+            print(f"'{entry}' was not found in custom protected safelist.")
+        return
+
+    if getattr(args, "safelist", False):
+        safety = get_safety()
+        print("\nCustom Protected Safelist Entries (Never Clean or Remove):")
+        print("=" * 60)
+        if not safety.user_whitelist:
+            print("  (Safelist is currently empty)")
+        else:
+            for item in safety.user_whitelist:
+                kind = "Path" if item.startswith("/") else ("Pattern" if any(c in item for c in ["*", "?", "["]) else "Package / App")
+                print(f"  • {item:<35} [{kind}]")
+        print()
         return
 
     # 1. Cache Cleaning

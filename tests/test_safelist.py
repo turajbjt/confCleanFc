@@ -144,6 +144,44 @@ class TestSafetyEngine(unittest.TestCase):
             is_prot, reason = self.safety.is_safelisted(c)
             self.assertFalse(is_prot, f"Expected {c} NOT to be protected, but got: {reason}")
 
+    def test_package_safelisting_and_custom_whitelist(self):
+        # 1. ConfClean FC core app protected
+        is_prot, reason = self.safety.is_package_safelisted("confclean-fc")
+        self.assertTrue(is_prot)
+        self.assertIn("ConfClean FC core application", reason)
+
+        # 2. Critical system packages protected
+        for core_pkg in ["glibc", "systemd", "kernel", "rpm", "dnf", "dnf5", "bash", "coreutils", "selinux-policy"]:
+            is_prot, reason = self.safety.is_package_safelisted(core_pkg)
+            self.assertTrue(is_prot, f"Expected {core_pkg} to be protected")
+            self.assertIn("Core system package", reason)
+
+        # 3. Arbitrary package initially not protected
+        is_prot, _ = self.safety.is_package_safelisted("miracle-wm")
+        self.assertFalse(is_prot)
+
+        # 4. User adds package to safelist
+        self.safety.add_user_whitelist("miracle-wm")
+        is_prot, reason = self.safety.is_package_safelisted("miracle-wm")
+        self.assertTrue(is_prot)
+        self.assertIn("User safelist match", reason)
+
+        # Also matches full NEVRA specifier
+        is_prot, reason = self.safety.is_package_safelisted("miracle-wm", "miracle-wm-0.3.0-1.fc44.x86_64")
+        self.assertTrue(is_prot)
+
+        # 5. Wildcard pattern for packages
+        self.safety.add_user_whitelist("my-retired-*")
+        is_prot, reason = self.safety.is_package_safelisted("my-retired-editor")
+        self.assertTrue(is_prot)
+        self.assertIn("User safelist match", reason)
+
+        # 6. check_core=False ignores core system packages but retains user safelist
+        is_prot, _ = self.safety.is_package_safelisted("glibc", check_core=False)
+        self.assertFalse(is_prot)
+        is_prot, _ = self.safety.is_package_safelisted("miracle-wm", check_core=False)
+        self.assertTrue(is_prot)
+
 
 if __name__ == "__main__":
     unittest.main()

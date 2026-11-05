@@ -3,18 +3,21 @@ DNF and RPM Package Optimizer Tab for ConfClean FC.
 Identifies unneeded dependencies (autoremove) and old kernels while strictly protecting the running kernel.
 """
 
+import fnmatch
 import subprocess
 from typing import List, Optional
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QColor
+from PyQt6.QtGui import QAction, QColor
 from PyQt6.QtWidgets import (
+    QApplication,
     QComboBox,
     QFrame,
     QHBoxLayout,
     QHeaderView,
     QLabel,
     QLineEdit,
+    QMenu,
     QMessageBox,
     QProgressBar,
     QPushButton,
@@ -26,6 +29,7 @@ from PyQt6.QtWidgets import (
 
 from confclean.core.cache_cleaner import CacheCleaner
 from confclean.core.package_manager import PackageManager, PackageSuggestion
+from confclean.core.safelist import SafetyEngine
 from confclean.core.selinux_manager import SELinuxManager
 from confclean.gui.workers import PackageRemovalWorker, PackageScanWorker, SELinuxWorker
 
@@ -38,9 +42,13 @@ class PackageTab(QWidget):
         pkg_mgr: PackageManager,
         selinux_mgr: Optional[SELinuxManager] = None,
         cache_cleaner: Optional[CacheCleaner] = None,
+        safety: Optional[SafetyEngine] = None,
     ):
         super().__init__()
         self.pkg_mgr = pkg_mgr
+        self.safety = safety or getattr(pkg_mgr, "safety", None) or SafetyEngine()
+        if hasattr(self.pkg_mgr, "safety") and not self.pkg_mgr.safety:
+            self.pkg_mgr.safety = self.safety
         self.selinux_mgr = selinux_mgr or SELinuxManager()
         self.cache_cleaner = cache_cleaner or CacheCleaner()
         self.suggestions: List[PackageSuggestion] = []
@@ -115,6 +123,11 @@ class PackageTab(QWidget):
         self.btn_deselect_all.clicked.connect(self._deselect_all_visible)
         filter_layout.addWidget(self.btn_deselect_all)
 
+        self.btn_safelist_selected = QPushButton("🛡️ Safelist Selected")
+        self.btn_safelist_selected.setToolTip("Add selected packages to the custom protected safelist (prevent removal)")
+        self.btn_safelist_selected.clicked.connect(self._safelist_selected_packages)
+        filter_layout.addWidget(self.btn_safelist_selected)
+
         layout.addLayout(filter_layout)
 
         # Package Table
@@ -123,6 +136,8 @@ class PackageTab(QWidget):
         self.table.setHorizontalHeaderLabels(["", "Package Name", "Version", "Size", "Category", "Status / Reason"])
         self.table.setAlternatingRowColors(True)
         self.table.verticalHeader().setVisible(False)
+        self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(self._show_context_menu)
         self.table.itemChanged.connect(self._on_table_item_changed)
 
         header = self.table.horizontalHeader()
@@ -612,3 +627,149 @@ class PackageTab(QWidget):
     def _on_selinux_worker_failed(self, err: str):
         self._refresh_selinux_ui()
         QMessageBox.critical(self, "SELinux Error", f"Operation failed: {err}")
+
+    def _is_user_safelisted(self, s: PackageSuggestion) -> Tuple[bool, str]:
+        """Checks if a package suggestion matches a pattern in the user custom safelist."""
+        if not hasattr(self.safety, "user_whitelist"):
+            return False, ""
+        for pat in self.safety.user_whitelist:
+            pat_lower = pat.lower()
+            if fnmatch.fnmatch(s.name.lower(), pat_lower):
+                return True, pat
+            if s.full_nevra and fnmatch.fnmatch(s.full_nevra.lower(), pat_lower):
+                return True, pat
+        return False, ""
+
+    def _show_context_menu(self, pos):
+        """Displays right-click context menu on package table items."""
+        item = self.table.itemAt(pos)
+        if not item:
+            return
+        row = item.row()
+        if row < 0 or row >= len(self.suggestions):
+            return
+        s = self.suggestions[row]
+
+        menu = QMenu(self)
+
+        is_user_safelisted, matched_pat = self._is_user_safelisted(s)
+        if is_user_safelisted:
+            act_safelist = QAction(f"🔓 Remove '{s.name}' from Safelist (Pattern: '{matched_pat}')", self)
+            act_safelist.triggered.connect(lambda: self._remove_from_safelist(s, matched_pat))
+            menu.addAction(act_safelist)
+        else:
+            act_safelist = QAction(f"🛡️ Add '{s.name}' to Safelist (Protect Forever)", self)
+            act_safelist.triggered.connect(lambda: self._add_to_safelist(s))
+            menu.addAction(act_safelist)
+
+        menu.addSeparator()
+
+        act_copy_name = QAction(f"📋 Copy Package Name ({s.name})", self)
+        act_copy_name.triggered.connect(lambda: self._copy_to_clipboard(s.name))
+        menu.addAction(act_copy_name)
+
+        if s.removal_spec and s.removal_spec != s.name:
+            act_copy_spec = QAction(f"📋 Copy Full Specifier ({s.removal_spec})", self)
+            act_copy_spec.triggered.connect(lambda: self._copy_to_clipboard(s.removal_spec))
+            menu.addAction(act_copy_spec)
+
+        menu.exec(self.table.viewport().mapToGlobal(pos))
+
+    def _add_to_safelist(self, s: PackageSuggestion):
+        """Adds single package to user custom safelist."""
+        if self.safety.add_user_whitelist(s.name):
+            self._re_evaluate_protections()
+            self._populate_table()
+            QMessageBox.information(
+                self,
+                "Added to Safelist",
+                f"'{s.name}' has been added to your custom safelist and will never be flagged for removal.",
+            )
+        else:
+            QMessageBox.information(
+                self,
+                "Already Safelisted",
+                f"'{s.name}' is already present in your custom safelist.",
+            )
+
+    def _remove_from_safelist(self, s: PackageSuggestion, pattern: Optional[str] = None):
+        """Removes package or matching pattern from user custom safelist."""
+        target = pattern or s.name
+        if self.safety.remove_user_whitelist(target):
+            self._re_evaluate_protections()
+            self._populate_table()
+            QMessageBox.information(
+                self,
+                "Removed from Safelist",
+                f"'{target}' has been removed from your custom safelist.",
+            )
+
+    def _safelist_selected_packages(self):
+        """Adds all currently selected packages to the custom protected safelist."""
+        selected = [s for s in self.suggestions if not s.is_protected and s.is_selected]
+        if not selected:
+            QMessageBox.information(self, "No Selection", "Please select at least one package to safelist.")
+            return
+
+        added = []
+        for s in selected:
+            if self.safety.add_user_whitelist(s.name):
+                added.append(s.name)
+
+        self._re_evaluate_protections()
+        self._populate_table()
+
+        names_str = ", ".join(added[:5])
+        if len(added) > 5:
+            names_str += f" and {len(added) - 5} more"
+        QMessageBox.information(
+            self,
+            "Packages Safelisted",
+            f"Successfully added {len(added)} package(s) to your custom safelist ({names_str}).\n\n"
+            "These packages are now permanently protected from removal.",
+        )
+
+    def _re_evaluate_protections(self):
+        """Re-evaluates protection status of all suggestions against current safelist."""
+        if hasattr(self.safety, "load_user_whitelist"):
+            self.safety.load_user_whitelist()
+        for s in self.suggestions:
+            if s.category == "old_kernel":
+                # Do not change protection of booted or fallback kernel
+                if "Currently running booted kernel" in s.reason or "Latest fallback backup kernel" in s.reason:
+                    continue
+                is_prot, prot_reason = self.safety.is_package_safelisted(s.name, s.full_nevra, check_core=False)
+                if is_prot:
+                    s.is_protected = True
+                    s.is_selected = False
+                    s.reason = f"PROTECTED: {prot_reason}"
+                elif s.is_protected and "User safelist match" in s.reason:
+                    s.is_protected = False
+                    s.is_selected = True
+                    s.reason = f"Old unused kernel ({s.version})."
+            else:
+                is_prot, prot_reason = self.safety.is_package_safelisted(s.name, s.full_nevra)
+                if is_prot:
+                    s.is_protected = True
+                    s.is_selected = False
+                    s.reason = f"PROTECTED: {prot_reason}"
+                elif s.is_protected and "User safelist match" in s.reason:
+                    s.is_protected = False
+                    s.is_selected = True
+                    if s.category == "repo_orphan":
+                        s.reason = "Retired package no longer available in any enabled repository (repo orphan / extra)"
+                    elif s.category == "unneeded_dep":
+                        s.reason = "Installed as dependency for removed software (autoremove candidate)"
+                    elif s.category == "duplicate":
+                        s.reason = "Duplicate package version installed simultaneously"
+                    elif s.category == "flatpak_unused":
+                        s.reason = "Unused Flatpak runtime left over after application removal"
+                    elif s.category == "snap_unused":
+                        s.reason = "Disabled Snap revision superseded by newer revision"
+                    else:
+                        s.reason = s.category.replace("_", " ").title()
+
+    def _copy_to_clipboard(self, text: str):
+        clipboard = QApplication.clipboard()
+        if clipboard:
+            clipboard.setText(text)

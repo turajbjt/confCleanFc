@@ -97,7 +97,7 @@ class MainWindow(QMainWindow):
         self.cleaner = cleaner or SafeCleaner(safety=self.safety, backup_mgr=self.backup_mgr)
         self.scanner = scanner or ConfigScanner(detector=self.detector, safety=self.safety)
         self.cache_cleaner = cache_cleaner or CacheCleaner(safety=self.safety)
-        self.pkg_mgr = pkg_mgr or PackageManager()
+        self.pkg_mgr = pkg_mgr or PackageManager(safety=self.safety)
         self.selinux_mgr = selinux_mgr or SELinuxManager()
         self.app_resetter = app_resetter or AppResetter(
             detector=self.detector,
@@ -209,6 +209,7 @@ class MainWindow(QMainWindow):
             self.pkg_mgr,
             selinux_mgr=self.selinux_mgr,
             cache_cleaner=self.cache_cleaner,
+            safety=self.safety,
         )
         self.stack.addWidget(self.tab_packages)
 
@@ -234,6 +235,10 @@ class MainWindow(QMainWindow):
         self.stack.setCurrentIndex(index)
         if index == 5:
             self.tab_settings.refresh_whitelist()
+        elif index == 2:
+            if hasattr(self.tab_packages, "_re_evaluate_protections"):
+                self.tab_packages._re_evaluate_protections()
+                self.tab_packages._populate_table()
         if not self.auto_scan_on_nav:
             return
         # Auto-trigger refresh for specific tabs when switched

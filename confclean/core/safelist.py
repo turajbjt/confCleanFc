@@ -146,6 +146,28 @@ class SafetyEngine:
         "/etc/vconsole.conf",
     }
 
+    # Core system packages that must never be removed
+    CORE_PROTECTED_PACKAGES: Set[str] = {
+        "confclean-fc",
+        "confclean",
+        "glibc",
+        "systemd",
+        "kernel",
+        "kernel-core",
+        "rpm",
+        "dnf",
+        "dnf5",
+        "setup",
+        "basesystem",
+        "filesystem",
+        "bash",
+        "coreutils",
+        "selinux-policy",
+        "shadow-utils",
+        "util-linux",
+        "polkit",
+    }
+
     def __init__(self, config_dir: str = None):
         self.config_dir = config_dir or os.path.expanduser("~/.config/confclean-fc")
         self.whitelist_file = os.path.join(self.config_dir, "custom_whitelist.json")
@@ -237,5 +259,49 @@ class SafetyEngine:
         for pat in self.CORE_SYSTEM_PATTERNS:
             if fnmatch.fnmatch(basename, pat.lower()) or fnmatch.fnmatch(clean_name, pat.lower()):
                 return True, f"Core system/desktop component: matches pattern '{pat}'"
+
+        return False, ""
+
+    def is_package_safelisted(
+        self,
+        package_name: str,
+        full_spec: str = "",
+        check_core: bool = True,
+    ) -> Tuple[bool, str]:
+        """
+        Evaluates whether an RPM, Flatpak, or Snap package is protected by system safelist
+        or user custom whitelist.
+        Returns:
+            (is_protected: bool, reason: str)
+        """
+        raw_name = (package_name or "").strip()
+        if not raw_name:
+            return False, ""
+        name_lower = raw_name.lower()
+        spec_lower = (full_spec or "").strip().lower()
+
+        # 1. User Custom Safelist (always checked first)
+        for user_pat in self.user_whitelist:
+            pat_lower = user_pat.lower()
+            if fnmatch.fnmatch(name_lower, pat_lower):
+                return True, f"User safelist match: '{user_pat}'"
+            if spec_lower and fnmatch.fnmatch(spec_lower, pat_lower):
+                return True, f"User safelist match: '{user_pat}'"
+
+        if not check_core:
+            return False, ""
+
+        # 2. ConfClean FC Application Integrity
+        if name_lower in ("confclean-fc", "confclean"):
+            return True, "ConfClean FC core application"
+
+        # 3. Critical System Packages
+        if name_lower in self.CORE_PROTECTED_PACKAGES or name_lower.startswith("kernel-core"):
+            return True, f"Core system package ({raw_name})"
+
+        # 4. Desktop & Plumbing System Patterns (e.g. systemd*, gnome*, pipewire*)
+        for pat in self.CORE_SYSTEM_PATTERNS:
+            if fnmatch.fnmatch(name_lower, pat.lower()):
+                return True, f"Core system component: matches pattern '{pat}'"
 
         return False, ""

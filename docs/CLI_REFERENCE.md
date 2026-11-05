@@ -48,6 +48,9 @@ When run without flags in a graphical desktop session (Wayland or X11), ConfClea
 | `--diff <FILE>` | View a syntax-highlighted unified diff between an RPM template (`.rpmnew` or `.rpmsave`) and its active configuration file. |
 | `--restore [ID]` | List available backup archives (if no ID specified) or restore files from a specific backup ID or path. |
 | `--reset-app <APP>` | Reset an application's settings to factory defaults with automatic backup (**Dry run by default** unless `--apply`). |
+| `--safelist` | Display all protected system configurations, core packages, and custom user safelist entries. Alias: `--whitelist`. |
+| `--safelist-add <ENTRY>` | Add a package name, directory path, or wildcard pattern to the protected safelist. Alias: `--whitelist-add`. |
+| `--safelist-remove <ENTRY>` | Remove a custom package or pattern entry from the protected safelist. Alias: `--whitelist-remove`. |
 | `-h`, `--help` | Display command usage and examples. |
 
 ---
@@ -177,6 +180,23 @@ Check whether SELinux is active and if a relabel is scheduled:
 Schedule file context repair on next boot via `fixfiles -B onboot` (elevates via `sudo`):
 ```bash
 ./main.py --selinux-fix-boot
+```
+
+### 12. Manage Protected Safelist (Packages & Configurations)
+Display all built-in core protected paths, system packages, and active custom safelist rules:
+```bash
+./main.py --safelist
+```
+
+Safelist a retired application package, unneeded dependency, or custom tool to permanently protect it from accidental removal:
+```bash
+./main.py --safelist-add miracle-wm
+./main.py --safelist-add "compat-*"
+```
+
+Remove an entry from the custom safelist:
+```bash
+./main.py --safelist-remove miracle-wm
 ```
 
 ---

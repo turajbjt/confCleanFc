@@ -57,20 +57,25 @@ When operating in root mode, ConfClean FC strictly blocks modification of system
 
 ---
 
-## 🎯 Layer 2: Custom User Whitelist
+## 🎯 Layer 2: Custom User Whitelist & Package Safelist
 
-Users can define their own permanent protection rules via:
-1. **The GUI Settings & Safelist Tab**: Add exact folder names or substring keywords to the Whitelist list (changes take effect immediately and auto-refresh dynamically across all tabs).
-2. **The JSON Configuration File**: Located at `~/.config/confclean-fc/custom_whitelist.json`.
+Users can define their own permanent protection rules across both **application configurations** and **installed system packages**:
+1. **Right-Click Context Menu (Packages & System Tab)**: Right-click any package suggestion in the table and select **"🛡️ Add to Safelist (Protect Forever)"** or **"🔓 Remove from Safelist"**.
+2. **Batch Safelist Button (Packages & System Tab)**: Select one or more packages and click the **"🛡️ Safelist Selected"** toolbar button.
+3. **The GUI Settings & Safelist Tab**: Add exact package names, directory paths, or wildcard patterns (e.g., `miracle-wm`, `compat-*`, `/opt/custom_tool`) to the Safelist (changes take effect immediately and auto-refresh dynamically across all tabs).
+4. **The Headless CLI**: Use `./main.py --safelist-add <ENTRY>` and `./main.py --safelist-remove <ENTRY>`.
+5. **The JSON Configuration File**: Located at `~/.config/confclean-fc/custom_whitelist.json`.
 
 ```json
 [
+  "miracle-wm",
+  "compat-*",
   "my_custom_tool",
   "project_alpha_settings"
 ]
 ```
 
-Any item matching a custom whitelist entry is displayed in the GUI with a greyed-out checkbox and marked `PROTECTED (User Whitelist)`.
+Any item matching a custom safelist entry is displayed in the GUI with a greyed-out, disabled checkbox, unchecked, and marked `PROTECTED (User Safelist)`. Furthermore, protected packages are strictly omitted from all removal batch commands.
 
 ---
 
@@ -110,11 +115,17 @@ If you ever need to retrieve a deleted configuration or undo an application rese
 
 ## 🐧 Layer 6: Safe Kernel & Package Management
 
-RPM-based systems (like Fedora) regularly install newer Linux kernels while maintaining fallback kernels. ConfClean FC protects against kernel unbootability:
-* **Running Kernel**: Evaluates `uname -r`. The running booted kernel is locked as `PROTECTED`.
-* **Fallback Kernel**: Identifies the latest alternative kernel installed on the system and locks it as `PROTECTED`.
-* **Old Redundant Kernels**: Only kernels that are 3rd or older are offered as removal candidates.
-* **DNF Dependencies**: Unneeded dependencies are cross-checked against core system libraries before removal commands are generated.
+RPM-based systems (like Fedora) regularly install newer Linux kernels while maintaining fallback kernels, and often accumulate orphan or retired packages from third-party repositories. ConfClean FC safeguards package health:
+* **User Package Safelist**: Any package added to the safelist (via right-click context menu, the "Safelist Selected" button, or `--safelist-add`) is permanently locked as `PROTECTED` across all scanners:
+  * **Retired Packages & Repo Extras**: Packages no longer in active repositories (e.g. custom tools or legacy apps) are kept safe from accidental uninstallation.
+  * **Unneeded Dependencies**: Packages marked as leaf dependencies are shielded if explicitly safelisted.
+  * **Old Kernels**: Specific kernel builds matching user safelist patterns or versions are locked against automated pruning.
+  * **Flatpaks & Snaps**: Unused Flatpak runtimes or disabled Snap revisions are preserved if safelisted.
+* **Core Protected Packages**: Vital Linux plumbing and system tools (`glibc`, `systemd`, `dnf`, `kernel`, `polkit`, `NetworkManager`, `pipewire`, desktop environments) are hardcoded in `CORE_PROTECTED_PACKAGES` and cannot be removed.
+* **Running Kernel Safeguard**: Evaluates `uname -r`. The running booted kernel is locked as `PROTECTED`.
+* **Fallback Kernel Safeguard**: Identifies the latest alternative kernel installed on the system and locks it as `PROTECTED`.
+* **Old Redundant Kernels**: Only kernels that are 3rd or older (and not in the safelist) are offered as removal candidates.
+* **Defense-in-Depth Removal Verification**: Before any removal batch is executed, `PackageManager.get_removal_commands()` asserts `safety.is_package_safelisted(pkg.name)`. Safelisted items are strictly excluded from generated `dnf`, `flatpak`, and `snap` removal commands.
 
 ---
 

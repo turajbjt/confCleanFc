@@ -3,15 +3,23 @@ Comprehensive unit tests for PackageManager and PackageSuggestion.
 """
 
 import os
+import shutil
+import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
 
 from confclean.core.package_manager import PackageManager, PackageSuggestion
+from confclean.core.safelist import SafetyEngine
 
 
 class TestPackageManager(unittest.TestCase):
     def setUp(self):
-        self.mgr = PackageManager()
+        self.tmp_conf = tempfile.mkdtemp()
+        self.safety = SafetyEngine(config_dir=self.tmp_conf)
+        self.mgr = PackageManager(safety=self.safety)
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp_conf, ignore_errors=True)
 
     def test_package_suggestion_properties(self):
         s = PackageSuggestion(
@@ -381,6 +389,81 @@ class TestPackageManager(unittest.TestCase):
             self.assertIn("old-tool", cmds[0])
             self.assertNotIn("confclean-fc", cmds[0])
             self.assertNotIn("glibc", cmds[0])
+
+    @patch("subprocess.run")
+    def test_user_safelisted_retired_package_protection(self, mock_run):
+        mock_proc = MagicMock()
+        mock_proc.returncode = 0
+        mock_proc.stdout = "keep-this-app-0:1.0.0-1.fc44.x86_64\nremove-this-0:2.0.0-1.fc44.x86_64\n"
+        mock_run.return_value = mock_proc
+
+        # Add keep-this-app to user safelist
+        self.mgr.safety.add_user_whitelist("keep-this-app")
+
+        with patch.object(self.mgr, "_get_rpm_info_map", return_value={
+            "keep-this-app": {"name": "keep-this-app", "version": "1.0.0", "release": "1.fc44", "arch": "x86_64", "size": 1000, "summary": "Keep app"},
+            "remove-this": {"name": "remove-this", "version": "2.0.0", "release": "1.fc44", "arch": "x86_64", "size": 2000, "summary": "Remove app"},
+        }):
+            orphans = self.mgr.scan_retired_packages()
+            self.assertEqual(len(orphans), 2)
+
+            keep_pkg = next(o for o in orphans if o.name == "keep-this-app")
+            self.assertTrue(keep_pkg.is_protected)
+            self.assertFalse(keep_pkg.is_selected)
+            self.assertIn("User safelist match", keep_pkg.reason)
+
+            rem_pkg = next(o for o in orphans if o.name == "remove-this")
+            self.assertFalse(rem_pkg.is_protected)
+            self.assertTrue(rem_pkg.is_selected)
+
+            # Removal commands must NEVER contain keep-this-app
+            cmds = self.mgr.get_removal_commands(orphans)
+            self.assertEqual(len(cmds), 1)
+            self.assertIn("remove-this", cmds[0])
+            self.assertNotIn("keep-this-app", cmds[0])
+
+    @patch("subprocess.run")
+    def test_user_safelisted_unneeded_dependency_protection(self, mock_subproc):
+        mock_subproc.return_value = MagicMock(
+            returncode=0,
+            stdout="safelisted-lib-0:1.2.3-1.fc44.x86_64\nunused-cli-0:2.0.0-1.fc44.noarch\n",
+        )
+        self.mgr.safety.add_user_whitelist("safelisted-lib")
+
+        with patch.object(self.mgr, "_get_rpm_info_map", return_value={}):
+            unneeded = self.mgr._get_unneeded_packages()
+
+        self.assertEqual(len(unneeded), 2)
+        pkg_safe = next(u for u in unneeded if u.name == "safelisted-lib")
+        self.assertTrue(pkg_safe.is_protected)
+        self.assertFalse(pkg_safe.is_selected)
+        self.assertIn("User safelist match", pkg_safe.reason)
+
+        pkg_rem = next(u for u in unneeded if u.name == "unused-cli")
+        self.assertFalse(pkg_rem.is_protected)
+        self.assertTrue(pkg_rem.is_selected)
+
+    @patch("subprocess.run")
+    def test_user_safelisted_old_kernel_protection(self, mock_subproc):
+        kernel_stdout = (
+            "kernel-core-0:7.2.13-200.fc44.x86_64\n"
+            "kernel-core-0:7.2.12-200.fc44.x86_64\n"
+            "kernel-core-0:7.2.10-200.fc44.x86_64\n"
+        )
+        mock_subproc.return_value = MagicMock(returncode=0, stdout=kernel_stdout)
+        self.mgr.safety.add_user_whitelist("*7.2.10*")
+
+        with patch("os.uname") as mock_uname:
+            mock_uname.return_value = MagicMock(release="7.2.13-200.fc44.x86_64")
+            with patch.object(self.mgr, "_get_rpm_info_map", return_value={}):
+                kernels = self.mgr._get_old_kernels()
+
+        k_7210 = [k for k in kernels if "7.2.10" in k.version]
+        self.assertTrue(len(k_7210) > 0)
+        for k in k_7210:
+            self.assertTrue(k.is_protected)
+            self.assertFalse(k.is_selected)
+            self.assertIn("User safelist match", k.reason)
 
 
 if __name__ == "__main__":

@@ -52,6 +52,7 @@ flowchart TD
     Cleaner --> Backup
     Scanner --> Detector
     Scanner --> Safety
+    PkgMgr --> Safety
     AppReset --> Backup
     AppReset --> Safety
     Core --> Logger
@@ -145,10 +146,15 @@ The **Restore Engine** supports:
 * **Conflict Management**: User can choose between skipping existing files or overwriting them with the backed-up version.
 
 ### 5. Multi-System Package Optimization (`confclean.core.package_manager.PackageManager`)
+* **User & Core Package Safelist (`SafetyEngine.is_package_safelisted`)**: Integrates directly with `SafetyEngine` to protect safelisted packages across all discovery methods:
+  * **Retired Packages & Repo Extras**: Packages no longer present in repositories (e.g. legacy apps or custom tools) are marked `PROTECTED (User Safelist)` and cannot be accidentally removed.
+  * **Core Protected Linux Packages**: Essential base system libraries and tools (`glibc`, `systemd`, `dnf`, `kernel`, `polkit`, `NetworkManager`) are hardcoded in `CORE_PROTECTED_PACKAGES` and locked against removal.
+  * **Unneeded Dependencies & Old Kernels**: Custom-safelisted package names or wildcard patterns (`miracle-wm`, `compat-*`) are immediately protected.
+* **Defense-in-Depth Removal Verification**: Before any removal batch script is constructed, `get_removal_commands()` asserts that no safelisted package is included in `dnf remove`, `flatpak uninstall`, or `snap remove` commands.
 * **Running Kernel Safeguard**: Evaluates `uname -r` and flags the currently active booted kernel as **PROTECTED**.
 * **Fallback Kernel Safeguard**: Identifies the newest installed kernel alternative (e.g. `kernel-core-6.x`) and flags it as **PROTECTED** to ensure the user always has a bootable fallback.
-* **Redundant Old Kernels**: Older redundant kernels (3rd or older) are classified as cleanable candidates.
-* **DNF Unneeded Dependencies**: Queries `dnf repoquery --unneeded` or `dnf autoremove` candidates, cross-checks against protected system libraries, and outputs safe removal commands.
+* **Redundant Old Kernels**: Older redundant kernels (3rd or older, not in safelist) are classified as cleanable candidates.
+* **DNF Unneeded Dependencies**: Queries `dnf repoquery --unneeded` or `dnf autoremove` candidates, cross-checks against protected system libraries and the safelist, and outputs safe removal commands.
 * **Flatpak Unused Runtime Pruning**: Automatically detects unreferenced runtimes (`flatpak list --runtime --unused`) and suggests cleanup via `flatpak uninstall --unused -y`. Degrades gracefully if Flatpak is not installed.
 * **Snap Disabled Revision Pruning**: Queries old disabled Snap revisions (`snap list --all`) and schedules pruning of non-active revisions. Degrades gracefully if Snap is not installed.
 * **Single-Authentication Privilege Batching**: When multiple packages require root privileges across DNF and Snap, `get_removal_command` coalesces commands into a single compound execution (e.g., `pkexec bash -c "cmd1 && cmd2"`) so the user enters their administrator password only once per batch operation.

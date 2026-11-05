@@ -120,13 +120,15 @@ class SystemDetector:
     def _load_flatpak_apps(self):
         """Loads installed Flatpak application IDs."""
         self.flatpak_apps.clear()
+        if not shutil.which("flatpak"):
+            return
         try:
             res = subprocess.run(
                 ["flatpak", "list", "--columns=application"],
                 capture_output=True,
                 text=True,
                 check=False,
-                timeout=5,
+                timeout=3,
             )
             if res.returncode == 0:
                 for line in res.stdout.splitlines():
@@ -141,13 +143,17 @@ class SystemDetector:
         self.snap_apps.clear()
         if not shutil.which("snap"):
             return
+        # Snap daemon communicates over a local socket. If socket does not exist, snap is not running.
+        snapd_sockets = ["/run/snapd.socket", "/var/run/snapd.socket"]
+        if not any(os.path.exists(s) for s in snapd_sockets):
+            return
         try:
             res = subprocess.run(
                 ["snap", "list"],
                 capture_output=True,
                 text=True,
                 check=False,
-                timeout=5,
+                timeout=2,
             )
             if res.returncode == 0:
                 for line in res.stdout.splitlines()[1:]:

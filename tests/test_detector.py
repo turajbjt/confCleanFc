@@ -120,5 +120,29 @@ class TestSystemDetector(unittest.TestCase):
             shutil.rmtree(temp_dir, ignore_errors=True)
 
 
+    def test_snap_apps_skips_when_socket_missing(self):
+        det = SystemDetector(refresh_on_init=False)
+        with patch("shutil.which", return_value="/usr/bin/snap"):
+            with patch("os.path.exists", return_value=False):
+                with patch("subprocess.run") as mock_run:
+                    det._load_snap_apps()
+                    mock_run.assert_not_called()
+                    self.assertEqual(len(det.snap_apps), 0)
+
+    def test_snap_apps_loads_when_socket_present(self):
+        det = SystemDetector(refresh_on_init=False)
+        mock_output = "Name    Version  Rev    Tracking  Publisher  Notes\nspotify 1.2.3    123    latest    spotify    -\n"
+        with patch("shutil.which", return_value="/usr/bin/snap"):
+            with patch("os.path.exists", side_effect=lambda p: p == "/run/snapd.socket"):
+                with patch("subprocess.run") as mock_run:
+                    mock_res = MagicMock()
+                    mock_res.returncode = 0
+                    mock_res.stdout = mock_output
+                    mock_run.return_value = mock_res
+                    det._load_snap_apps()
+                    mock_run.assert_called_once()
+                    self.assertIn("spotify", det.snap_apps)
+
+
 if __name__ == "__main__":
     unittest.main()

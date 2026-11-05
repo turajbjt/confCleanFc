@@ -23,9 +23,10 @@ from PyQt6.QtWidgets import (
 
 from confclean.core.safelist import SafetyEngine
 from confclean.core.selinux_manager import SELinuxManager
+from confclean.gui.workers import BaseWorker
 
 
-class ElevationWorker(QThread):
+class ElevationWorker(BaseWorker):
     """Monitors asynchronous pkexec launch and waits for child GUI readiness handshake."""
 
     elevation_failed = pyqtSignal(str)

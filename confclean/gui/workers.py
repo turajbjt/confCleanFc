@@ -3,7 +3,7 @@ Asynchronous QThread workers for ConfClean FC.
 Ensures smooth, non-blocking UI during scanning, backups, deletions, and restores.
 """
 
-from typing import List, Optional
+from typing import List, Optional, Set
 from PyQt6.QtCore import QThread, pyqtSignal
 
 from confclean.core.app_resetter import AppResetProfile, AppResetter
@@ -14,8 +14,33 @@ from confclean.core.package_manager import PackageManager, PackageSuggestion
 from confclean.core.restore_manager import RestoreManager, RestoreResult
 from confclean.core.scanner import ConfigScanner, ScanItem
 
+_ACTIVE_WORKERS: Set[QThread] = set()
 
-class ScanWorker(QThread):
+
+class BaseWorker(QThread):
+    """
+    Base worker ensuring QThread references are retained globally in memory
+    while executing, preventing premature Python garbage collection and Qt C++ crashes.
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        for sig_name in ("finished", "failed", "elevation_succeeded", "elevation_failed"):
+            if hasattr(self, sig_name):
+                try:
+                    getattr(self, sig_name).connect(self._on_worker_completed)
+                except Exception:
+                    pass
+
+    def start(self, priority: QThread.Priority = QThread.Priority.InheritPriority):
+        _ACTIVE_WORKERS.add(self)
+        super().start(priority)
+
+    def _on_worker_completed(self, *args):
+        _ACTIVE_WORKERS.discard(self)
+
+
+class ScanWorker(BaseWorker):
     """Worker for asynchronous configuration directory scanning."""
 
     progress = pyqtSignal(str, int, int)  # status_msg, current, total
@@ -36,7 +61,7 @@ class ScanWorker(QThread):
             self.failed.emit(str(e))
 
 
-class CleanWorker(QThread):
+class CleanWorker(BaseWorker):
     """Worker for asynchronous file cleaning with pre-backup."""
 
     progress = pyqtSignal(str, int, int)
@@ -63,7 +88,7 @@ class CleanWorker(QThread):
             self.failed.emit(str(e))
 
 
-class PackageScanWorker(QThread):
+class PackageScanWorker(BaseWorker):
     """Worker for DNF package and kernel suggestion queries."""
 
     progress = pyqtSignal(str, int, int)
@@ -84,7 +109,7 @@ class PackageScanWorker(QThread):
             self.failed.emit(str(e))
 
 
-class CacheCleanWorker(QThread):
+class CacheCleanWorker(BaseWorker):
     """Worker for purging cache categories."""
 
     progress = pyqtSignal(str, int, int)
@@ -109,7 +134,7 @@ class CacheCleanWorker(QThread):
             self.failed.emit(str(e))
 
 
-class AppResetWorker(QThread):
+class AppResetWorker(BaseWorker):
     """Worker for resetting application to factory defaults."""
 
     progress = pyqtSignal(str, int, int)
@@ -135,7 +160,7 @@ class AppResetWorker(QThread):
             self.failed.emit(str(e))
 
 
-class RestoreWorker(QThread):
+class RestoreWorker(BaseWorker):
     """Worker for restoring backup archives."""
 
     progress = pyqtSignal(str, int, int)
@@ -171,7 +196,7 @@ class RestoreWorker(QThread):
             self.failed.emit(str(e))
 
 
-class BackupListWorker(QThread):
+class BackupListWorker(BaseWorker):
     """Worker for asynchronously discovering and listing backup archives."""
 
     progress = pyqtSignal(str, int, int)
@@ -190,7 +215,7 @@ class BackupListWorker(QThread):
             self.failed.emit(str(e))
 
 
-class ArchiveInspectWorker(QThread):
+class ArchiveInspectWorker(BaseWorker):
     """Worker for asynchronously inspecting items inside a backup archive."""
 
     finished = pyqtSignal(str, list)  # archive_path, List[dict]
@@ -209,7 +234,7 @@ class ArchiveInspectWorker(QThread):
             self.failed.emit(self.archive_path, str(e))
 
 
-class PackageRemovalWorker(QThread):
+class PackageRemovalWorker(BaseWorker):
     """Worker for executing package removal commands asynchronously in background."""
 
     finished = pyqtSignal(int, str)  # returncode, output
@@ -237,7 +262,7 @@ class PackageRemovalWorker(QThread):
             self.failed.emit(str(e))
 
 
-class SELinuxWorker(QThread):
+class SELinuxWorker(BaseWorker):
     """Worker for executing SELinux fix/cancel operations asynchronously without blocking GUI."""
 
     finished = pyqtSignal(bool, str)  # success, message
@@ -257,6 +282,24 @@ class SELinuxWorker(QThread):
             else:
                 success, msg = False, f"Unknown action: {self.action}"
             self.finished.emit(success, msg)
+        except Exception as e:
+            self.failed.emit(str(e))
+
+
+class ProfileDiscoverWorker(BaseWorker):
+    """Worker for asynchronously discovering applications with configurations."""
+
+    finished = pyqtSignal(list)  # List[AppResetProfile]
+    failed = pyqtSignal(str)
+
+    def __init__(self, resetter: AppResetter):
+        super().__init__()
+        self.resetter = resetter
+
+    def run(self):
+        try:
+            profiles = self.resetter.discover_reset_profiles()
+            self.finished.emit(profiles)
         except Exception as e:
             self.failed.emit(str(e))
 

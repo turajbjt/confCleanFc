@@ -266,6 +266,9 @@ class ScannerTab(QWidget):
 
     def start_scan(self):
         """Launches background scan."""
+        if hasattr(self, "scan_worker") and self.scan_worker and self.scan_worker.isRunning():
+            return
+
         self.btn_rescan.setEnabled(False)
         self.btn_clean.setEnabled(False)
         self.progress_bar.setVisible(True)
@@ -545,6 +548,9 @@ class ScannerTab(QWidget):
 
     def start_clean(self):
         """Starts cleanup workflow."""
+        if hasattr(self, "clean_worker") and self.clean_worker and self.clean_worker.isRunning():
+            return
+
         items_to_clean = [it for it in self.scanned_items if it.is_selected and it.status != "PROTECTED"]
         if not items_to_clean:
             QMessageBox.information(self, "No Selection", "Please select at least one item to clean.")

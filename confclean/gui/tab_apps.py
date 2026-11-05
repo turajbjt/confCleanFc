@@ -63,4 +63,9 @@ class AppConfigsTab(QWidget):
         self.tab_reset = AppResetTab(self.app_resetter)
         self.tabs.addTab(self.tab_reset, "🔄  Factory Reset (Installed Apps)")
 
+        self.tabs.currentChanged.connect(self._on_subtab_changed)
         layout.addWidget(self.tabs)
+
+    def _on_subtab_changed(self, index: int):
+        if index == 1 and not self.tab_reset.profiles:
+            self.tab_reset.load_profiles()

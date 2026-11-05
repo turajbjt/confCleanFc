@@ -3,6 +3,7 @@ App Reset Tab for ConfClean FC.
 Enables resetting individual applications back to fresh install defaults with automatic backups.
 """
 
+import os
 from typing import List, Optional
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
@@ -21,7 +22,7 @@ from PyQt6.QtWidgets import (
 )
 
 from confclean.core.app_resetter import AppResetProfile, AppResetter
-from confclean.gui.workers import AppResetWorker
+from confclean.gui.workers import AppResetWorker, ProfileDiscoverWorker
 
 
 class AppResetTab(QWidget):
@@ -125,11 +126,40 @@ class AppResetTab(QWidget):
         layout.addWidget(self.progress_label)
         layout.addWidget(self.progress_bar)
 
-    def load_profiles(self):
+    def load_profiles(self, sync: bool = False):
         """Discovers applications with configurations."""
-        self.profiles = self.app_resetter.discover_reset_profiles()
-        self.list_widget.clear()
+        if hasattr(self, "discover_worker") and self.discover_worker and self.discover_worker.isRunning():
+            return
 
+        # Synchronous fallback for headless unit tests or explicitly requested sync
+        if sync or os.environ.get("QT_QPA_PLATFORM") == "offscreen":
+            self.profiles = self.app_resetter.discover_reset_profiles()
+            self._populate_profiles()
+            return
+
+        self.progress_bar.setVisible(True)
+        self.progress_bar.setRange(0, 0)
+        self.progress_label.setVisible(True)
+        self.progress_label.setText("Discovering application configuration profiles...")
+
+        self.discover_worker = ProfileDiscoverWorker(self.app_resetter)
+        self.discover_worker.finished.connect(self._on_profiles_discovered)
+        self.discover_worker.failed.connect(self._on_profiles_failed)
+        self.discover_worker.start()
+
+    def _on_profiles_discovered(self, profiles: List[AppResetProfile]):
+        self.progress_bar.setVisible(False)
+        self.progress_label.setVisible(False)
+        self.profiles = profiles
+        self._populate_profiles()
+
+    def _on_profiles_failed(self, error: str):
+        self.progress_bar.setVisible(False)
+        self.progress_label.setVisible(False)
+        QMessageBox.warning(self, "Discovery Error", f"Failed to discover application profiles: {error}")
+
+    def _populate_profiles(self):
+        self.list_widget.clear()
         for prof in self.profiles:
             item = QListWidgetItem(f"{prof.name} ({prof.formatted_size})")
             item.setData(Qt.ItemDataRole.UserRole, prof)
@@ -165,6 +195,8 @@ class AppResetTab(QWidget):
             self.btn_reset.style().polish(self.btn_reset)
 
     def _start_reset(self):
+        if hasattr(self, "worker") and self.worker and self.worker.isRunning():
+            return
         if not self.current_profile:
             return
 

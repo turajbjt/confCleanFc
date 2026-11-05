@@ -240,8 +240,6 @@ class MainWindow(QMainWindow):
         if index == 0:
             if not self.tab_scanner.scanned_items:
                 self.tab_scanner.start_scan()
-            if not self.tab_reset.profiles:
-                self.tab_reset.load_profiles()
         elif index == 1 and not self.tab_cache.categories:
             self.tab_cache.scan_caches()
         elif index == 2 and not self.tab_packages.suggestions:
@@ -290,8 +288,5 @@ def run_gui(ready_signal: bool = False):
             os.dup2(devnull.fileno(), sys.stderr.fileno())
         except Exception:
             pass
-
-    # Trigger scan upon initial load
-    window.tab_scanner.start_scan()
 
     sys.exit(app.exec())

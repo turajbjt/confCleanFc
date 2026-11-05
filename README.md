@@ -90,20 +90,20 @@ ConfClean FC requires **Python 3.9+** and **PyQt6** for its graphical interface:
 You can directly install the pre-built unified `.rpm` package included in the repository using `dnf` or `rpm` (compatible across Fedora 40+, CentOS Stream, Rocky Linux, and RHEL):
 ```bash
 # Install binary RPM locally with automatic dependency resolution:
-sudo dnf install ./confclean-fc-1.1.4-11.noarch.rpm
+sudo dnf install ./confclean-fc-1.1.4-12.noarch.rpm
 
 # Or with rpm:
-sudo rpm -ivh ./confclean-fc-1.1.4-11.noarch.rpm
+sudo rpm -ivh ./confclean-fc-1.1.4-12.noarch.rpm
 ```
 
 #### Rebuilding or Inspecting from Source RPM (SRPM):
-The repository also includes the official source RPM (`confclean-fc-1.1.4-11.src.rpm`), enabling full auditability, reproducible rebuilds, and mock/chroot building:
+The repository also includes the official source RPM (`confclean-fc-1.1.4-12.src.rpm`), enabling full auditability, reproducible rebuilds, and mock/chroot building:
 ```bash
 # Rebuild binary RPM directly from the source RPM:
-rpmbuild --rebuild ./confclean-fc-1.1.4-11.src.rpm
+rpmbuild --rebuild ./confclean-fc-1.1.4-12.src.rpm
 
 # Or inspect the spec file and source archive:
-rpm -ivh ./confclean-fc-1.1.4-11.src.rpm
+rpm -ivh ./confclean-fc-1.1.4-12.src.rpm
 ```
 
 Verify package integrity using the included checksums:

@@ -40,13 +40,16 @@ from confclean.gui.tab_restore import RestoreTab
 from confclean.gui.tab_scanner import RpmDiffDialog, ScannerTab
 from confclean.gui.tab_settings import ElevationWorker, SettingsTab
 from confclean.gui.workers import (
+    _ACTIVE_WORKERS,
     AppResetWorker,
     ArchiveInspectWorker,
     BackupListWorker,
+    BaseWorker,
     CacheCleanWorker,
     CleanWorker,
     PackageRemovalWorker,
     PackageScanWorker,
+    ProfileDiscoverWorker,
     RestoreWorker,
     ScanWorker,
 )
@@ -712,6 +715,36 @@ class TestGUIHeadless(unittest.TestCase):
         win.tab_scanner.scanned_items = items
         win.tab_apps.status_changed.emit()
         self.assertIn("1 orphans", win.lbl_reclaimable.text())
+
+    def test_scanner_tab_reentry_guard(self):
+        tab = ScannerTab(self.mock_scanner, self.mock_cleaner, self.mock_safety)
+        # Mock a currently running scan_worker
+        mock_worker = MagicMock(spec=ScanWorker)
+        mock_worker.isRunning.return_value = True
+        tab.scan_worker = mock_worker
+
+        with patch("confclean.gui.tab_scanner.ScanWorker") as mock_cls:
+            tab.start_scan()
+            mock_cls.assert_not_called()
+
+    def test_worker_lifecycle_retention(self):
+        # BaseWorker must be tracked in _ACTIVE_WORKERS when started, and discarded when finished
+        worker = ScanWorker(self.mock_scanner)
+        self.assertNotIn(worker, _ACTIVE_WORKERS)
+        _ACTIVE_WORKERS.add(worker)
+        self.assertIn(worker, _ACTIVE_WORKERS)
+        worker.finished.emit([])
+        self.assertNotIn(worker, _ACTIVE_WORKERS)
+
+    def test_profile_discover_worker(self):
+        prof = AppResetProfile("test", "Test App", "Desc", ["/test"], 100, 1, True)
+        self.mock_resetter.discover_reset_profiles.return_value = [prof]
+        worker = ProfileDiscoverWorker(self.mock_resetter)
+        results = []
+        worker.finished.connect(lambda p: results.append(p))
+        worker.run()
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0][0].name, "Test App")
 
 
 if __name__ == "__main__":

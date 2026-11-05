@@ -11,15 +11,16 @@ DIST_DIR="${ROOT_DIR}/dist"
 RPMBUILD_DIR="${ROOT_DIR}/rpmbuild"
 DIST_TAG="${DIST_TAG:-%{nil}}"
 
-# Locate rpmbuild binary
+# Locate rpmbuild binary or compile standalone runner
 if command -v rpmbuild >/dev/null 2>&1; then
     RPMBUILD_BIN="$(command -v rpmbuild)"
-elif [ -x "/tmp/rpmbuild_tool/usr/bin/rpmbuild" ]; then
-    RPMBUILD_BIN="/tmp/rpmbuild_tool/usr/bin/rpmbuild"
-    export LD_LIBRARY_PATH="/tmp/rpmbuild_tool/usr/lib64:${LD_LIBRARY_PATH}"
 else
-    echo "Error: rpmbuild binary not found. Please install rpm-build (sudo dnf install rpm-build)." >&2
-    exit 1
+    RUNNER_BIN="${SCRIPT_DIR}/rpmbuild-runner"
+    if [ ! -x "${RUNNER_BIN}" ]; then
+        echo "==> Compiling native librpmbuild runner..."
+        gcc -O2 -o "${RUNNER_BIN}" "${SCRIPT_DIR}/rpmbuild-runner.c" -lrpm -lrpmbuild -lrpmio
+    fi
+    RPMBUILD_BIN="${RUNNER_BIN}"
 fi
 
 echo "==> Using rpmbuild: ${RPMBUILD_BIN}"
@@ -59,40 +60,67 @@ rm -rf "${TMP_SRC}"
 # Copy spec file
 cp "${SCRIPT_DIR}/confclean-fc.spec" "${RPMBUILD_DIR}/SPECS/"
 
-echo "==> Building binary RPM package (dist tag: '${DIST_TAG}')..."
+echo "==> Building binary and source RPM packages (dist tag: '${DIST_TAG}')..."
 "${RPMBUILD_BIN}" \
     --define "_topdir ${RPMBUILD_DIR}" \
     --define "_tmppath /tmp" \
     --define "dist ${DIST_TAG}" \
-    -bb "${RPMBUILD_DIR}/SPECS/confclean-fc.spec"
+    -ba "${RPMBUILD_DIR}/SPECS/confclean-fc.spec"
 
-# Find generated RPM
+# Find generated RPMs
 RPM_FILE="$(find "${RPMBUILD_DIR}/RPMS" -name "*.rpm" | head -n 1)"
+SRPM_FILE="$(find "${RPMBUILD_DIR}/SRPMS" -name "*.src.rpm" | head -n 1)"
 
 if [ -z "${RPM_FILE}" ] || [ ! -f "${RPM_FILE}" ]; then
-    echo "Error: RPM build failed to produce an rpm package." >&2
+    echo "Error: RPM build failed to produce a binary rpm package." >&2
     exit 1
 fi
 
 RPM_FILENAME="$(basename "${RPM_FILE}")"
 
-# Purge any older RPMs in dist and root to ensure only the latest unified RPM exists
+# Purge any older RPMs in dist and root to ensure only the latest unified RPMs exist
 rm -f "${DIST_DIR}"/*.rpm
-find "${ROOT_DIR}" -maxdepth 1 -name "confclean-fc-*.rpm" ! -name "${RPM_FILENAME}" -delete 2>/dev/null || true
+find "${ROOT_DIR}" -maxdepth 1 -name "confclean-fc-*.noarch.rpm" ! -name "${RPM_FILENAME}" -delete 2>/dev/null || true
 
 cp "${RPM_FILE}" "${DIST_DIR}/${RPM_FILENAME}"
 cp "${RPM_FILE}" "${ROOT_DIR}/${RPM_FILENAME}"
 
+SRPM_FILENAME=""
+if [ -n "${SRPM_FILE}" ] && [ -f "${SRPM_FILE}" ]; then
+    SRPM_FILENAME="$(basename "${SRPM_FILE}")"
+    find "${ROOT_DIR}" -maxdepth 1 -name "confclean-fc-*.src.rpm" ! -name "${SRPM_FILENAME}" -delete 2>/dev/null || true
+    cp "${SRPM_FILE}" "${DIST_DIR}/${SRPM_FILENAME}"
+    cp "${SRPM_FILE}" "${ROOT_DIR}/${SRPM_FILENAME}"
+fi
+
+# Generate SHA256 checksums
+echo "==> Generating SHA256SUMS..."
+cd "${ROOT_DIR}"
+if [ -n "${SRPM_FILENAME}" ]; then
+    sha256sum "${RPM_FILENAME}" "${SRPM_FILENAME}" > "${ROOT_DIR}/SHA256SUMS"
+else
+    sha256sum "${RPM_FILENAME}" > "${ROOT_DIR}/SHA256SUMS"
+fi
+cp "${ROOT_DIR}/SHA256SUMS" "${DIST_DIR}/SHA256SUMS"
+
 echo ""
 echo "============================================================"
 echo "  RPM BUILD SUCCESSFUL!"
-echo "  Package: ${ROOT_DIR}/${RPM_FILENAME}"
+echo "  Binary Package: ${ROOT_DIR}/${RPM_FILENAME}"
+if [ -n "${SRPM_FILENAME}" ]; then
+    echo "  Source Package: ${ROOT_DIR}/${SRPM_FILENAME}"
+fi
 echo "============================================================"
 echo ""
-echo "To install manually on your system:"
+echo "To install binary package on your system:"
 echo "  sudo dnf install ./${RPM_FILENAME}"
 echo "  # or:"
 echo "  sudo rpm -ivh ./${RPM_FILENAME}"
+if [ -n "${SRPM_FILENAME}" ]; then
+    echo ""
+    echo "To rebuild from source RPM:"
+    echo "  rpmbuild --rebuild ./${SRPM_FILENAME}"
+fi
 echo ""
 echo "Package Details:"
 rpm -qip "${ROOT_DIR}/${RPM_FILENAME}"

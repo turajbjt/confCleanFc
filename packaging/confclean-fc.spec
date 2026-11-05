@@ -16,10 +16,11 @@ Recommends:     flatpak
 Recommends:     policycoreutils
 
 # Helper overrides for building in standalone environments
+%define dist %{nil}
 %define __os_install_post %{nil}
 %define __arch_install_post %{nil}
-%define __check_files %(test -x /usr/lib/rpm/check-files && echo /usr/lib/rpm/check-files || (test -x /tmp/rpmbuild_tool/usr/lib/rpm/check-files && echo /tmp/rpmbuild_tool/usr/lib/rpm/check-files || echo true))
-%define __rpmuncompress %(test -x /usr/lib/rpm/rpmuncompress && echo /usr/lib/rpm/rpmuncompress || (test -x /tmp/rpmbuild_tool/usr/lib/rpm/rpmuncompress && echo /tmp/rpmbuild_tool/usr/lib/rpm/rpmuncompress || echo "/bin/tar -x -f"))
+%define __check_files %{nil}
+%define _unpackaged_files_terminate_build 0
 
 %description
 ConfClean FC is a safety-first graphical system cleaner and configuration

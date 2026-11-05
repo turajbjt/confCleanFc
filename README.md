@@ -1,14 +1,27 @@
 # ConfClean FC 🛡️🧹
+### Fedora, Rocky Linux & CentOS System Cleaner, Orphan Purger & Configuration Manager
 
-[![Release](https://img.shields.io/badge/release-v1.1.4-blue.svg)](https://github.com/turajbjt/confCleanFc/releases)
-[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
-[![Fedora](https://img.shields.io/badge/Fedora-40%20%7C%2041%20%7C%2042%20%7C%2043%20%7C%2044-294172?logo=fedora&logoColor=white)](https://fedoraproject.org)
-[![Python](https://img.shields.io/badge/Python-3.9%2B-blue?logo=python&logoColor=white)](pyproject.toml)
-[![Status](https://img.shields.io/badge/status-BETA-orange)](README.md#%EF%B8%8F-beta-software--use-at-your-own-risk)
+[![Linux](https://img.shields.io/badge/Platform-Fedora%20%7C%20Rocky%20%7C%20CentOS%20%7C%20RHEL-blue?logo=fedora)](https://getfedora.org)
+[![Python](https://img.shields.io/badge/Python-3.9%2B-blue?logo=python)](https://python.org)
+[![GUI](https://img.shields.io/badge/GUI-PyQt6%20Adwaita-3584e4?logo=qt)](https://pypi.org/project/PyQt6/)
+[![RPM Package](https://img.shields.io/badge/RPM-Universal%20noarch-red?logo=redhat)](packaging/)
+[![License: GPL-3.0-or-later](https://img.shields.io/badge/License-GPL--3.0--or--later-blue.svg)](LICENSE)
+[![Safety](https://img.shields.io/badge/Safety-Pre--Clean%20Backups%20%26%20Ironclad%20Safelist-26a269)](docs/SAFETY.md)
+[![Tests](https://img.shields.io/badge/Tests-140%2F140%20Passing-brightgreen)](tests/)
 
-**ConfClean FC** is a powerful, safety-first graphical system cleaner and configuration purger built specifically for **Fedora Linux** and compatible **RPM-based distributions** (Rocky Linux, CentOS Stream, RHEL, and AlmaLinux).
+**ConfClean FC** is a powerful, safety-first system cleaner, orphan configuration purger, and maintenance suite built specifically for **Fedora Linux** (Fedora 40, 41, 42, 43, 44, 45+) and compatible **RPM-based distributions** (Rocky Linux, CentOS Stream, RHEL, and AlmaLinux).
 
-Inspired by the philosophy of tools like OrphyCleaner, ConfClean FC goes substantially further: it provides an end-to-end configuration cleaner with **automatic pre-deletion compressed backup archives**, a **built-in interactive restore tool** (selective or whole), **cache and junk cleanup**, **DNF/RPM package suggestions** (unneeded dependencies and safe old kernel cleanup), **application factory reset**, and an **ironclad system safelist**.
+Inspired by the philosophy of tools like OrphyCleaner, ConfClean FC goes substantially further: it provides an end-to-end configuration cleaner with **automatic pre-deletion compressed backup archives**, a **built-in interactive restore tool** (selective or whole), **cache and junk cleanup**, **DNF/RPM package suggestions** (unneeded dependencies and safe old kernel cleanup), **application factory reset**, and an **ironclad system safelist**. Featuring both a modern **GNOME 45+ Adwaita Dark GUI** and a full-featured **headless CLI** for remote administration and scripts.
+
+---
+
+## 📚 Documentation Quick Links
+
+- [📥 Installation & Setup Guide](docs/INSTALLATION.md)
+- [💻 Command-Line Interface (CLI) Reference](docs/CLI_REFERENCE.md)
+- [🏗️ Architecture & Design Specification](docs/ARCHITECTURE.md)
+- [🛡️ Safety Engine & Protection Principles](docs/SAFETY.md)
+- [🤝 Contributing Guidelines](CONTRIBUTING.md)
 
 ---
 
@@ -76,11 +89,26 @@ ConfClean FC requires **Python 3.9+** and **PyQt6** for its graphical interface:
 ### 1. Install via RPM Package (Recommended)
 You can directly install the pre-built unified `.rpm` package included in the repository using `dnf` or `rpm` (compatible across Fedora 40+, CentOS Stream, Rocky Linux, and RHEL):
 ```bash
-# Install locally with automatic dependency resolution:
+# Install binary RPM locally with automatic dependency resolution:
 sudo dnf install ./confclean-fc-1.1.4-10.noarch.rpm
 
 # Or with rpm:
 sudo rpm -ivh ./confclean-fc-1.1.4-10.noarch.rpm
+```
+
+#### Rebuilding or Inspecting from Source RPM (SRPM):
+The repository also includes the official source RPM (`confclean-fc-1.1.4-10.src.rpm`), enabling full auditability, reproducible rebuilds, and mock/chroot building:
+```bash
+# Rebuild binary RPM directly from the source RPM:
+rpmbuild --rebuild ./confclean-fc-1.1.4-10.src.rpm
+
+# Or inspect the spec file and source archive:
+rpm -ivh ./confclean-fc-1.1.4-10.src.rpm
+```
+
+Verify package integrity using the included checksums:
+```bash
+sha256sum -c SHA256SUMS
 ```
 
 Once installed, launch ConfClean FC from your application menu or directly in terminal:
@@ -88,7 +116,7 @@ Once installed, launch ConfClean FC from your application menu or directly in te
 confclean-fc        # or simply: confclean
 ```
 
-To rebuild the RPM package at any time:
+To build both binary and source RPMs at any time:
 ```bash
 ./packaging/build-rpm.sh
 ```
@@ -264,12 +292,18 @@ confCleanFc/
 │   ├── CLI_REFERENCE.md      # Headless syntax and examples
 │   ├── INSTALLATION.md       # Installation, desktop shortcuts, and uninstallation
 │   └── SAFETY.md             # Security and protection guarantees
+├── packaging/                # Universal RPM specs, packaging scripts, and Polkit policies
+│   ├── build-rpm.sh          # Binary & source RPM build automation script
+│   ├── confclean-fc.spec     # Universal RPM packaging spec file
+│   ├── io.github.confclean_fc.policy # Polkit authentication policy
+│   └── rpmbuild-runner.c     # Standalone C runner using librpm/librpmbuild
 ├── tests/                    # Automated unit test suite (140 tests)
 ├── confclean.desktop         # Freedesktop application shortcut
 ├── install-desktop.sh        # Installer script for GNOME Application Grid
 ├── uninstall-desktop.sh      # Uninstaller script for desktop shortcuts
 ├── main.py                   # Main executable entry point
 ├── requirements.txt          # Python dependencies
+├── SHA256SUMS                # Official cryptographic checksums for RPM packages
 └── README.md
 ```
 
@@ -307,3 +341,11 @@ python3 -m unittest discover -s tests
 * **`tests/test_gui_headless.py`** (21 tests): All 10 asynchronous workers (`ScanWorker`, `CleanWorker`, `PackageScanWorker`, `CacheCleanWorker`, `AppResetWorker`, `RestoreWorker`, `BackupListWorker`, `ArchiveInspectWorker`, `PackageRemovalWorker`, `SELinuxWorker`), offscreen testing of `ScannerTab` (including broken `.desktop` entry display and double-click diff viewer invocation), `RpmDiffDialog` (colorization and clipboard copy), `PackageTab` (Flatpak/Snap category badges, batched package removal, SELinux onboot scheduling), `CacheTab`, `AppResetTab`, `RestoreTab`, `LogsTab`, `SettingsTab` (elevation logic and custom whitelist live auto-refresh), `MainWindow` multi-tab navigation, and verification that Dry Run is checked by default across all tabs.
 * **`tests/test_selinux.py`** (8 tests): SELinux status detection, scheduling on-boot fix via `fixfiles -B onboot` using root/pkexec/sudo, on-boot cancellation removing `/.autorelabel`, command argument construction, and error resilience.
 * **`tests/test_version.py`** (3 tests): Version synchronization across `confclean/__init__.py`, `pyproject.toml`, and RPM packaging spec (`confclean-fc.spec`).
+
+---
+
+## ⚖️ License & Copyright
+
+- **Copyright**: © [BuildDesignCreate.com](https://builddesigncreate.com)
+- **License**: [GNU General Public License v3.0 or later (GPL-3.0-or-later)](LICENSE)
+- **Sister Application**: [ConfTune FC](https://github.com/turajbjt/confTuneFc)

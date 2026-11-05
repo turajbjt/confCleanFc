@@ -20,6 +20,22 @@ sudo dnf install ./confclean-fc-1.1.4-10.noarch.rpm
 sudo rpm -ivh ./confclean-fc-1.1.4-10.noarch.rpm
 ```
 
+#### Rebuilding or Inspecting from Source RPM (SRPM):
+The repository also provides the official source RPM (`confclean-fc-1.1.4-10.src.rpm`), allowing you to inspect the spec file, audit source tarballs, or rebuild binary packages in isolated mock/chroot environments:
+
+```bash
+# Rebuild binary RPM from source package:
+rpmbuild --rebuild ./confclean-fc-1.1.4-10.src.rpm
+
+# Or inspect the spec file and source archive:
+rpm -ivh ./confclean-fc-1.1.4-10.src.rpm
+```
+
+Verify package integrity using the included SHA256 checksums:
+```bash
+sha256sum -c SHA256SUMS
+```
+
 Once installed, launch ConfClean FC from your application grid or from any terminal:
 ```bash
 confclean-fc

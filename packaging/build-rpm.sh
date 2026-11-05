@@ -7,7 +7,6 @@ ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 PKG_NAME="confclean-fc"
 PKG_VERSION="${PKG_VERSION:-$(PYTHONPATH="${ROOT_DIR}" python3 -c "import confclean; print(confclean.__version__)")}"
-DIST_DIR="${ROOT_DIR}/dist"
 RPMBUILD_DIR="${ROOT_DIR}/rpmbuild"
 DIST_TAG="${DIST_TAG:-%{nil}}"
 
@@ -28,7 +27,6 @@ echo "==> Preparing build environment for ${PKG_NAME}-${PKG_VERSION}..."
 
 rm -rf "${RPMBUILD_DIR}"
 mkdir -p "${RPMBUILD_DIR}"/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS}
-mkdir -p "${DIST_DIR}"
 
 # Prepare source archive
 TMP_SRC="/tmp/${PKG_NAME}-${PKG_VERSION}"
@@ -79,18 +77,15 @@ fi
 RPM_FILENAME="$(basename "${RPM_FILE}")"
 
 # Purge any older RPMs in dist and root to ensure only the latest unified RPMs exist
-rm -f "${DIST_DIR}"/*.rpm
 find "${ROOT_DIR}" -maxdepth 1 -name "confclean-fc-*.noarch.rpm" ! -name "${RPM_FILENAME}" -delete 2>/dev/null || true
 
-cp "${RPM_FILE}" "${DIST_DIR}/${RPM_FILENAME}"
 cp "${RPM_FILE}" "${ROOT_DIR}/${RPM_FILENAME}"
 
 SRPM_FILENAME=""
 if [ -n "${SRPM_FILE}" ] && [ -f "${SRPM_FILE}" ]; then
     SRPM_FILENAME="$(basename "${SRPM_FILE}")"
     find "${ROOT_DIR}" -maxdepth 1 -name "confclean-fc-*.src.rpm" ! -name "${SRPM_FILENAME}" -delete 2>/dev/null || true
-    cp "${SRPM_FILE}" "${DIST_DIR}/${SRPM_FILENAME}"
-    cp "${SRPM_FILE}" "${ROOT_DIR}/${SRPM_FILENAME}"
+        cp "${SRPM_FILE}" "${ROOT_DIR}/${SRPM_FILENAME}"
 fi
 
 # Generate SHA256 checksums
@@ -101,7 +96,9 @@ if [ -n "${SRPM_FILENAME}" ]; then
 else
     sha256sum "${RPM_FILENAME}" > "${ROOT_DIR}/SHA256SUMS"
 fi
-cp "${ROOT_DIR}/SHA256SUMS" "${DIST_DIR}/SHA256SUMS"
+
+# Clean up build tree intermediates so only the current release artifacts are retained
+rm -rf "${RPMBUILD_DIR}"
 
 echo ""
 echo "============================================================"

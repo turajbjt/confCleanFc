@@ -159,6 +159,14 @@ class MainWindow(QMainWindow):
             mode_pill.setObjectName("pill_badge")
         h_layout.addWidget(mode_pill)
 
+        # Elevate Button if running unprivileged (Top-Right Header Action)
+        if not is_root:
+            self.btn_elevate = QPushButton("🛡️ Relaunch as Root (pkexec)")
+            self.btn_elevate.setProperty("class", "primary")
+            self.btn_elevate.setToolTip("Relaunch ConfClean FC with root / administrative privileges via pkexec")
+            self.btn_elevate.clicked.connect(self._relaunch_as_root)
+            h_layout.addWidget(self.btn_elevate)
+
         main_layout.addWidget(header)
 
         # Body Layout: Sidebar + Stacked Views
@@ -257,6 +265,11 @@ class MainWindow(QMainWindow):
         total_b = sum(i.size_bytes for i in orphans)
         size_mb = total_b / (1024 * 1024)
         self.lbl_reclaimable.setText(f"Reclaimable: {len(orphans)} orphans ({size_mb:.1f} MB)")
+
+    def _relaunch_as_root(self):
+        """Relaunch ConfClean FC as root via PolicyKit (pkexec)."""
+        if hasattr(self, "tab_settings") and hasattr(self.tab_settings, "_relaunch_as_root"):
+            self.tab_settings._relaunch_as_root()
 
 
 def run_gui(ready_signal: bool = False):

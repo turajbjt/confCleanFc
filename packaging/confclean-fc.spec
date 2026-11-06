@@ -1,6 +1,6 @@
 Name:           confclean-fc
 Version:        1.1.4
-Release:        13%{?dist}
+Release:        14%{?dist}
 Summary:        Fedora & RPM system cleaner and orphan configuration purger
 
 License:        GPL-3.0-or-later
@@ -145,6 +145,11 @@ fi
 %{_datadir}/polkit-1/actions/io.github.confclean_fc.policy
 
 %changelog
+* Thu Nov 05 2026 James Turansky <turajb@gmail.com> - 1.1.4-14
+- Restore top-right header button to relaunch as root via pkexec in user mode
+- Synchronize elevation button state and authorization handshake across MainWindow header and SettingsTab
+- Add comprehensive headless unit test for header elevation action
+
 * Thu Nov 05 2026 James Turansky <turajb@gmail.com> - 1.1.4-13
 - Add package and system safelisting support to prevent accidental removal of retired packages, dependencies, and kernels
 - Add right-click context menu and batch 'Safelist Selected' button to Packages & System tab

@@ -10,9 +10,13 @@ PKG_VERSION="${PKG_VERSION:-$(PYTHONPATH="${ROOT_DIR}" python3 -c "import confcl
 RPMBUILD_DIR="${ROOT_DIR}/rpmbuild"
 DIST_TAG="${DIST_TAG:-%{nil}}"
 
-# Locate rpmbuild binary or compile standalone runner
+# Locate rpmbuild binary or standalone runner
 if command -v rpmbuild >/dev/null 2>&1; then
     RPMBUILD_BIN="$(command -v rpmbuild)"
+elif [ -x "/tmp/rpmbuild_tool/usr/bin/rpmbuild" ]; then
+    RPMBUILD_BIN="/tmp/rpmbuild_tool/usr/bin/rpmbuild"
+elif [ -x "/tmp/usr/bin/rpmbuild" ]; then
+    RPMBUILD_BIN="/tmp/usr/bin/rpmbuild"
 else
     RUNNER_BIN="${SCRIPT_DIR}/rpmbuild-runner"
     if [ ! -x "${RUNNER_BIN}" ]; then
@@ -21,6 +25,8 @@ else
     fi
     RPMBUILD_BIN="${RUNNER_BIN}"
 fi
+
+RPMUNCOMPRESS_BIN="$(command -v rpmuncompress || (test -x /tmp/rpmbuild_tool/usr/bin/rpmuncompress && echo /tmp/rpmbuild_tool/usr/bin/rpmuncompress) || (test -x /tmp/usr/bin/rpmuncompress && echo /tmp/usr/bin/rpmuncompress) || echo "/bin/tar -x -f")"
 
 echo "==> Using rpmbuild: ${RPMBUILD_BIN}"
 echo "==> Preparing build environment for ${PKG_NAME}-${PKG_VERSION}..."
@@ -63,6 +69,7 @@ echo "==> Building binary and source RPM packages (dist tag: '${DIST_TAG}')..."
     --define "_topdir ${RPMBUILD_DIR}" \
     --define "_tmppath /tmp" \
     --define "dist ${DIST_TAG}" \
+    --define "__rpmuncompress ${RPMUNCOMPRESS_BIN}" \
     -ba "${RPMBUILD_DIR}/SPECS/confclean-fc.spec"
 
 # Find generated RPMs

@@ -218,9 +218,10 @@ class SettingsTab(QWidget):
             QMessageBox.information(self, "Safelist Updated", f"Removed '{text}' from custom safelist.")
 
     def _relaunch_as_root(self):
+        parent = self.window() if self.window() else self
         if os.geteuid() == 0:
             QMessageBox.information(
-                self,
+                parent,
                 "Already Elevated",
                 "ConfClean FC is already running with root / administrative privileges.",
             )
@@ -229,14 +230,14 @@ class SettingsTab(QWidget):
         pkexec_bin = shutil.which("pkexec")
         if not pkexec_bin:
             QMessageBox.critical(
-                self,
+                parent,
                 "Elevation Unavailable",
                 "The 'pkexec' utility was not found. Please install the polkit package to use privilege elevation.",
             )
             return
 
         reply = QMessageBox.question(
-            self,
+            parent,
             "Elevate Privileges",
             "This will restart ConfClean FC as root via pkexec to enable system-wide cleaning.\n\nContinue?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
@@ -272,6 +273,12 @@ class SettingsTab(QWidget):
             self.btn_elevate.setEnabled(False)
             self.btn_elevate.setText("Waiting for authorization...")
 
+        window = self.window()
+        main_btn = getattr(window, "btn_elevate", None) if window else None
+        if main_btn and main_btn is not getattr(self, "btn_elevate", None):
+            main_btn.setEnabled(False)
+            main_btn.setText("Waiting for authorization...")
+
         self._elevation_worker = ElevationWorker(cmd, self)
         self._elevation_worker.elevation_succeeded.connect(self._on_elevation_succeeded)
         self._elevation_worker.elevation_failed.connect(self._on_elevation_failed)
@@ -285,9 +292,16 @@ class SettingsTab(QWidget):
             self.btn_elevate.setEnabled(True)
             self.btn_elevate.setText("🛡️ Relaunch as Root (Elevate via pkexec)")
 
+        window = self.window()
+        main_btn = getattr(window, "btn_elevate", None) if window else None
+        if main_btn and main_btn is not getattr(self, "btn_elevate", None):
+            main_btn.setEnabled(True)
+            main_btn.setText("🛡️ Relaunch as Root (pkexec)")
+
         if error_msg != "cancelled":
+            parent = self.window() if self.window() else self
             QMessageBox.critical(
-                self,
+                parent,
                 "Elevation Failed",
                 f"Could not launch elevated instance:\n\n{error_msg}",
             )

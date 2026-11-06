@@ -432,6 +432,65 @@ class TestGUIHeadless(unittest.TestCase):
             win._on_nav_changed(2)
             mock_pkg_scan.assert_called_once()
 
+    @patch("shutil.which")
+    @patch("subprocess.run")
+    def test_main_window_header_elevate_button(self, mock_subproc_run, mock_which):
+        from PyQt6.QtWidgets import QMessageBox
+
+        mock_which.return_value = "/usr/bin/pkexec"
+
+        # 1. Unprivileged user mode: button must exist in header
+        win_user = MainWindow(
+            scanner=self.mock_scanner,
+            cleaner=self.mock_cleaner,
+            safety=self.mock_safety,
+            backup_mgr=self.mock_backup_mgr,
+            restore_mgr=self.mock_restore_mgr,
+            cache_cleaner=self.mock_cache,
+            pkg_mgr=self.mock_pkg,
+            app_resetter=self.mock_resetter,
+            auto_scan_on_nav=False,
+        )
+        self.assertTrue(hasattr(win_user, "btn_elevate"), "MainWindow must have btn_elevate in user mode")
+        self.assertTrue(win_user.btn_elevate.isEnabled())
+        self.assertIn("Relaunch as Root", win_user.btn_elevate.text())
+        self.assertEqual(win_user.btn_elevate.property("class"), "primary")
+
+        # 2. Clicking header elevate button delegates to _relaunch_as_root
+        self.mock_quest.return_value = QMessageBox.StandardButton.Yes
+        with patch.object(ElevationWorker, "start") as mock_worker_start:
+            win_user.btn_elevate.click()
+            mock_subproc_run.assert_called_once_with(
+                ["xhost", "+SI:localuser:root"], capture_output=True, timeout=2, check=False
+            )
+            self.assertFalse(win_user.btn_elevate.isEnabled())
+            self.assertEqual(win_user.btn_elevate.text(), "Waiting for authorization...")
+            self.assertFalse(win_user.tab_settings.btn_elevate.isEnabled())
+            self.assertEqual(win_user.tab_settings.btn_elevate.text(), "Waiting for authorization...")
+            mock_worker_start.assert_called_once()
+
+        # 3. On failure, header button and settings tab button are restored
+        win_user.tab_settings._on_elevation_failed("cancelled")
+        self.assertTrue(win_user.btn_elevate.isEnabled())
+        self.assertIn("Relaunch as Root", win_user.btn_elevate.text())
+        self.assertTrue(win_user.tab_settings.btn_elevate.isEnabled())
+        self.assertIn("Relaunch as Root", win_user.tab_settings.btn_elevate.text())
+
+        # 4. Root mode: header elevate button must NOT be displayed
+        with patch("os.geteuid", return_value=0):
+            win_root = MainWindow(
+                scanner=self.mock_scanner,
+                cleaner=self.mock_cleaner,
+                safety=self.mock_safety,
+                backup_mgr=self.mock_backup_mgr,
+                restore_mgr=self.mock_restore_mgr,
+                cache_cleaner=self.mock_cache,
+                pkg_mgr=self.mock_pkg,
+                app_resetter=self.mock_resetter,
+                auto_scan_on_nav=False,
+            )
+            self.assertFalse(hasattr(win_root, "btn_elevate"), "MainWindow must not have btn_elevate in root mode")
+
     def test_settings_tab_whitelist_auto_refresh_on_nav(self):
         # Initial state has 1 item ("protected_custom")
         win = MainWindow(

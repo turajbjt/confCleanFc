@@ -1,6 +1,6 @@
 Name:           confclean-fc
 Version:        1.1.4
-Release:        15%{?dist}
+Release:        16%{?dist}
 Summary:        Fedora & RPM system cleaner and orphan configuration purger
 
 License:        GPL-3.0-or-later
@@ -145,6 +145,9 @@ fi
 %{_datadir}/polkit-1/actions/io.github.confclean_fc.policy
 
 %changelog
+* Tue Nov 10 2026 James Turansky <builddesigncreate.com> - 1.1.4-16
+- Establish persistent workspace AGENTS.md rules requiring automatic version bump and RPM rebuild on every change
+
 * Tue Nov 10 2026 James Turansky <builddesigncreate.com> - 1.1.4-15
 - Automatically gray out and disable all root-only options when running as unprivileged user
 - Disable and gray out root-required cache categories in Cache & Junk tab with explanatory tooltips

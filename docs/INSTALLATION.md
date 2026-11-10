@@ -14,21 +14,21 @@ You can install the pre-built unified `.rpm` package directly from this reposito
 
 ```bash
 # Using DNF with automatic dependency resolution:
-sudo dnf install ./confclean-fc-1.1.4-15.noarch.rpm
+sudo dnf install ./confclean-fc-1.1.4-16.noarch.rpm
 
 # Or directly with RPM:
-sudo rpm -ivh ./confclean-fc-1.1.4-15.noarch.rpm
+sudo rpm -ivh ./confclean-fc-1.1.4-16.noarch.rpm
 ```
 
 #### Rebuilding or Inspecting from Source RPM (SRPM):
-The repository also provides the official source RPM (`confclean-fc-1.1.4-15.src.rpm`), allowing you to inspect the spec file, audit source tarballs, or rebuild binary packages in isolated mock/chroot environments:
+The repository also provides the official source RPM (`confclean-fc-1.1.4-16.src.rpm`), allowing you to inspect the spec file, audit source tarballs, or rebuild binary packages in isolated mock/chroot environments:
 
 ```bash
 # Rebuild binary RPM from source package:
-rpmbuild --rebuild ./confclean-fc-1.1.4-15.src.rpm
+rpmbuild --rebuild ./confclean-fc-1.1.4-16.src.rpm
 
 # Or inspect the spec file and source archive:
-rpm -ivh ./confclean-fc-1.1.4-15.src.rpm
+rpm -ivh ./confclean-fc-1.1.4-16.src.rpm
 ```
 
 Verify package integrity using the included SHA256 checksums:
@@ -45,7 +45,7 @@ confclean
 
 To upgrade an existing RPM package installation in the future:
 ```bash
-sudo dnf upgrade ./confclean-fc-1.1.4-15.noarch.rpm
+sudo dnf upgrade ./confclean-fc-1.1.4-16.noarch.rpm
 ```
 
 ---

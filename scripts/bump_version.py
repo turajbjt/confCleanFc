@@ -84,12 +84,11 @@ def update_pyproject_toml(new_version: str):
 def get_git_author() -> str:
     try:
         name = subprocess.check_output(["git", "config", "user.name"], text=True).strip()
-        email = subprocess.check_output(["git", "config", "user.email"], text=True).strip()
-        if name and email:
-            return f"{name} <{email}>"
+        if name:
+            return f"{name} <builddesigncreate.com>"
     except Exception:
         pass
-    return "James Turansky <turajb@plugnpay.com>"
+    return "James Turansky <builddesigncreate.com>"
 
 
 def update_spec_file(new_version: str, changelog_msg: str):
@@ -106,8 +105,8 @@ def update_spec_file(new_version: str, changelog_msg: str):
     )
 
     # Format changelog entry
-    # Fedora RPM changelog format: * Day Mon DD YYYY Name <email> - Version-Release
-    # e.g. * Sun Nov 01 2026 James Turansky <turajb@plugnpay.com> - 1.1.1-1
+    # Fedora RPM changelog format: * Day Mon DD YYYY Name <contact> - Version-Release
+    # e.g. * Sun Nov 01 2026 James Turansky <builddesigncreate.com> - 1.1.1-1
     now = datetime.datetime.now()
     date_str = now.strftime("%a %b %d %Y")
     author = get_git_author()

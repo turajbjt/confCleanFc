@@ -5,6 +5,7 @@ Provides controls to clean thumbnails, trash, coredumps, DNF caches, and journal
 
 from typing import List, Optional
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QCheckBox,
     QFrame,
@@ -116,14 +117,17 @@ class CacheTab(QWidget):
         for row, cat in enumerate(self.categories):
             total_bytes += cat.size_bytes
 
+            can_clean = not cat.requires_root or self.cache_cleaner.is_root
+            tooltip = "Root privileges required. Relaunch ConfClean FC as root via pkexec to clean this cache." if not can_clean else ""
+
             # Column 0: Checkbox
             chk_item = QTableWidgetItem()
-            can_clean = not cat.requires_root or self.cache_cleaner.is_root
             if not can_clean:
-                chk_item.setFlags(chk_item.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
+                chk_item.setFlags(chk_item.flags() & ~Qt.ItemFlag.ItemIsUserCheckable & ~Qt.ItemFlag.ItemIsEnabled)
                 chk_item.setCheckState(Qt.CheckState.Unchecked)
+                chk_item.setToolTip(tooltip)
             else:
-                chk_item.setFlags(chk_item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+                chk_item.setFlags(chk_item.flags() | Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled)
                 chk_item.setCheckState(
                     Qt.CheckState.Checked if cat.is_selected else Qt.CheckState.Unchecked
                 )
@@ -132,27 +136,44 @@ class CacheTab(QWidget):
             # Column 1: Name
             name_item = QTableWidgetItem(cat.name)
             name_item.setFlags(name_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            if not can_clean:
+                name_item.setFlags(name_item.flags() & ~Qt.ItemFlag.ItemIsEnabled)
+                name_item.setForeground(QColor("#6e7681"))
+                name_item.setToolTip(tooltip)
             self.table.setItem(row, 1, name_item)
 
             # Column 2: Size
             size_item = QTableWidgetItem(cat.formatted_size)
             size_item.setFlags(size_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             size_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            if not can_clean:
+                size_item.setFlags(size_item.flags() & ~Qt.ItemFlag.ItemIsEnabled)
+                size_item.setForeground(QColor("#6e7681"))
+                size_item.setToolTip(tooltip)
             self.table.setItem(row, 2, size_item)
 
             # Column 3: Privilege requirement
-            priv_text = "Root Required" if cat.requires_root else "User Level"
+            priv_text = "🔒 Root Required" if cat.requires_root else "User Level"
             priv_item = QTableWidgetItem(priv_text)
             priv_item.setFlags(priv_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-            if cat.requires_root and not self.cache_cleaner.is_root:
-                priv_item.setForeground(Qt.GlobalColor.darkRed)
+            if not can_clean:
+                priv_item.setFlags(priv_item.flags() & ~Qt.ItemFlag.ItemIsEnabled)
+                priv_item.setForeground(QColor("#8b5e5e"))
+                priv_item.setToolTip(tooltip)
             else:
-                priv_item.setForeground(Qt.GlobalColor.darkGreen)
+                priv_item.setForeground(Qt.GlobalColor.darkGreen if not cat.requires_root else QColor("#99c1f1"))
             self.table.setItem(row, 3, priv_item)
 
             # Column 4: Description
-            desc_item = QTableWidgetItem(cat.description)
+            desc_text = cat.description
+            if not can_clean:
+                desc_text += " [Disabled: Requires root privileges]"
+            desc_item = QTableWidgetItem(desc_text)
             desc_item.setFlags(desc_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            if not can_clean:
+                desc_item.setFlags(desc_item.flags() & ~Qt.ItemFlag.ItemIsEnabled)
+                desc_item.setForeground(QColor("#6e7681"))
+                desc_item.setToolTip(tooltip)
             self.table.setItem(row, 4, desc_item)
 
         size_mb = total_bytes / (1024 * 1024)
@@ -175,7 +196,10 @@ class CacheTab(QWidget):
         for row in range(self.table.rowCount()):
             chk = self.table.item(row, 0)
             if chk and chk.checkState() == Qt.CheckState.Checked:
-                selected_cats.append(self.categories[row])
+                cat = self.categories[row]
+                if cat.requires_root and not self.cache_cleaner.is_root:
+                    continue
+                selected_cats.append(cat)
 
         if not selected_cats:
             QMessageBox.information(self, "No Selection", "Please check at least one cache category to clean.")

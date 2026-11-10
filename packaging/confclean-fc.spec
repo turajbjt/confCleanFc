@@ -1,6 +1,6 @@
 Name:           confclean-fc
 Version:        1.1.4
-Release:        14%{?dist}
+Release:        15%{?dist}
 Summary:        Fedora & RPM system cleaner and orphan configuration purger
 
 License:        GPL-3.0-or-later
@@ -145,81 +145,89 @@ fi
 %{_datadir}/polkit-1/actions/io.github.confclean_fc.policy
 
 %changelog
-* Thu Nov 05 2026 James Turansky <turajb@gmail.com> - 1.1.4-14
+* Tue Nov 10 2026 James Turansky <builddesigncreate.com> - 1.1.4-15
+- Automatically gray out and disable all root-only options when running as unprivileged user
+- Disable and gray out root-required cache categories in Cache & Junk tab with explanatory tooltips
+- Disable system DNF cache purging in Packages & System tab when running in user mode
+- Gray out and uncheck system configuration items (/etc/*.rpmsave, *.rpmnew) in Scanner tab when running as non-root
+- Ensure Select All and Select Only Orphans skip root-only items when unprivileged
+- Expand headless GUI test coverage to 155 passing unit tests
+
+* Thu Nov 05 2026 James Turansky <builddesigncreate.com> - 1.1.4-14
 - Restore top-right header button to relaunch as root via pkexec in user mode
 - Synchronize elevation button state and authorization handshake across MainWindow header and SettingsTab
 - Add comprehensive headless unit test for header elevation action
 
-* Thu Nov 05 2026 James Turansky <turajb@gmail.com> - 1.1.4-13
+* Thu Nov 05 2026 James Turansky <builddesigncreate.com> - 1.1.4-13
 - Add package and system safelisting support to prevent accidental removal of retired packages, dependencies, and kernels
 - Add right-click context menu and batch 'Safelist Selected' button to Packages & System tab
 - Support package names, wildcard patterns, and paths in custom safelist (~/.config/confclean-fc/custom_whitelist.json)
 - Add CLI safelist management commands (--safelist, --safelist-add, --safelist-remove)
 - Defense-in-depth safety assertion ensuring protected packages are never included in DNF, Flatpak, or Snap removal commands
 
-* Thu Nov 05 2026 James Turansky <turajb@gmail.com> - 1.1.4-12
+* Thu Nov 05 2026 James Turansky <builddesigncreate.com> - 1.1.4-12
 - Fix startup crash caused by duplicate concurrent scan and premature QThread garbage collection
 - Implement BaseWorker global thread retention to prevent SIGABRT across all asynchronous tasks
 - Add re-entrancy guards to ScannerTab.start_scan and start_clean
 - Skip snap list subprocess when snapd socket is inactive to eliminate 5-second startup freeze
 - Lazy-load Factory Reset profiles asynchronously on demand to ensure instant GUI launch
 
-* Thu Nov 05 2026 James Turansky <turajb@gmail.com> - 1.1.4-11
+* Thu Nov 05 2026 James Turansky <builddesigncreate.com> - 1.1.4-11
 - Set transparent background on QLabel, QCheckBox, and QRadioButton to eliminate mismatched text bounding boxes
 - Align UI theme rendering with ConfTune FC Adwaita dark styling
 
-* Wed Nov 04 2026 James Turansky <turajb@gmail.com> - 1.1.4-10
+* Wed Nov 04 2026 James Turansky <builddesigncreate.com> - 1.1.4-10
 - Set desktopFileName and applicationName to confclean-fc for GNOME Wayland app_id icon mapping
 - Add StartupWMClass=confclean-fc to desktop launcher
 - Install standard raster icon sizes (16x16 to 512x512) and update icon cache in %post
 
-* Wed Nov 04 2026 James Turansky <turajb@gmail.com> - 1.1.4-9
+* Wed Nov 04 2026 James Turansky <builddesigncreate.com> - 1.1.4-9
 - Run SELinux schedule and cancel operations asynchronously in background QThread to keep GUI responsive
 - Fix window manager focus-stealing and authentication dialog interruption in GNOME/Wayland
 - Register fixfiles action in Polkit policy configuration
 - Increase pkexec authorization timeout to 180s and handle cancellation gracefully
 
-* Wed Nov 04 2026 James Turansky <turajb@gmail.com> - 1.1.4-8
+* Wed Nov 04 2026 James Turansky <builddesigncreate.com> - 1.1.4-8
 - Expand Factory Reset library to 30 desktop applications (Slack, Nextcloud, Cura, Android Studio, GitKraken, Picard, etc.)
 - Add detector mapping aliases for newly supported desktop applications
 
-* Wed Nov 04 2026 James Turansky <turajb@gmail.com> - 1.1.4-7
+* Wed Nov 04 2026 James Turansky <builddesigncreate.com> - 1.1.4-7
 - Auto-refresh custom safelist UI on tab navigation and showEvent
 - Expose load_user_whitelist() on SafelistManager and refresh_whitelist() on SettingsTab
 
-* Wed Nov 04 2026 James Turansky <turajb@gmail.com> - 1.1.4-6
+* Wed Nov 04 2026 James Turansky <builddesigncreate.com> - 1.1.4-6
 - Safely handle unreadable files (permission denied) during pre-deletion backup without aborting cleanup
 - Add automatic permission unlock for read-only directories and files during rmtree
 - Inform user with guidance to elevate via pkexec if root-owned files cannot be removed
 
-* Wed Nov 04 2026 James Turansky <turajb@gmail.com> - 1.1.4-5
+* Wed Nov 04 2026 James Turansky <builddesigncreate.com> - 1.1.4-5
 - Fix AppConfigsTab.status_changed signal signature (0 arguments) to prevent crash on startup scan
 
-* Wed Nov 04 2026 James Turansky <turajb@gmail.com> - 1.1.4-4
+* Wed Nov 04 2026 James Turansky <builddesigncreate.com> - 1.1.4-4
 - Make noarch RPM purely Python source and eliminate conflicting %pre scriptlet
 - Compile bytecode on target system in %post to match installed Python version
 - Eliminate "remove failed: No such file or directory" errors during dnf upgrade
 
-* Wed Nov 04 2026 James Turansky <turajb@gmail.com> - 1.1.4-3
+* Wed Nov 04 2026 James Turansky <builddesigncreate.com> - 1.1.4-3
 - Consolidate CLI and GUI features into unified, non-redundant offerings
 - Unify Application Configs view (Uninstalled Leftovers & Factory Reset) into single 6-tab navigation
 - Move SELinux on-boot relabeling and direct DNF package cache cleaning into Packages & System tab
 - Unify CLI package operations (--packages [--retired-only] [--clean-cache]) and scan operations (--scan [--symlinks-only])
 - Thoroughly purge DNF/RPM package caches and foreign systemd journal directories
 
-* Mon Nov 02 2026 James Turansky <turajb@gmail.com> - 1.1.4-2
+* Mon Nov 02 2026 James Turansky <builddesigncreate.com> - 1.1.4-2
 - Package compiled Python bytecode and purge stale unmanaged pycache across upgrades
 
-* Sun Nov 01 2026 James Turansky <turajb@gmail.com> - 1.1.4-1
+* Sun Nov 01 2026 James Turansky <builddesigncreate.com> - 1.1.4-1
 - Increase application logo size to 42x42 (75% larger) in header
 
-* Sun Nov 01 2026 James Turansky <turajb@gmail.com> - 1.1.3-1
+* Sun Nov 01 2026 James Turansky <builddesigncreate.com> - 1.1.3-1
 - Add application logo icon to header left of ConfClean FC title
 
-* Sun Nov 01 2026 James Turansky <turajb@gmail.com> - 1.1.2-1
+* Sun Nov 01 2026 James Turansky <builddesigncreate.com> - 1.1.2-1
 - Add copyright notice for BuildDesignCreate.com under safety rules
 
-* Sun Nov 01 2026 James Turansky <turajb@gmail.com> - 1.1.1-1
+* Sun Nov 01 2026 James Turansky <builddesigncreate.com> - 1.1.1-1
 - Fix pkexec root relaunch with Wayland/X11 display preservation
 - Add Polkit GUI execution policy action
 - Auto-size table name columns to width of longest entry
@@ -227,11 +235,11 @@ fi
 - Add progress bar and confirmation for package removal
 - Add uninstallation guide and desktop uninstaller script
 
-* Sun Nov 01 2026 James Turansky <turajb@plugnpay.com> - 1.1.0-1
+* Sun Nov 01 2026 James Turansky <builddesigncreate.com> - 1.1.0-1
 - Add broken .desktop and autostart entry detection and safe cleaning
 - Add Flatpak unused runtime and Snap disabled revision pruning
 - Add built-in unified diff viewer for .rpmnew and .rpmsave files
 - Optimize privilege escalation to a single prompt per batch operation
 
-* Fri Oct 30 2026 James Turansky <turajb@plugnpay.com> - 1.0.0-1
+* Fri Oct 30 2026 James Turansky <builddesigncreate.com> - 1.0.0-1
 - Initial RPM release of ConfClean FC for Fedora and RPM distributions

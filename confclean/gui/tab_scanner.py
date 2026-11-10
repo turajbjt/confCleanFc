@@ -303,28 +303,52 @@ class ScannerTab(QWidget):
         self.btn_clean.setEnabled(True)
         QMessageBox.critical(self, "Scan Error", f"Failed to scan system: {error}")
 
+    def _is_item_root_only(self, item: ScanItem) -> bool:
+        """Determines if cleaning this scanned item requires root privileges."""
+        if getattr(item, "category", "") in ("system_etc", "system"):
+            return True
+        if getattr(item, "path", "").startswith(("/etc/", "/usr/", "/var/", "/opt/")):
+            return True
+        if hasattr(item, "path") and item.path and os.path.exists(item.path):
+            parent_dir = os.path.dirname(item.path) or item.path
+            if not os.access(item.path, os.W_OK) or (os.path.isdir(parent_dir) and not os.access(parent_dir, os.W_OK)):
+                return True
+            try:
+                st = os.lstat(item.path)
+                if st.st_uid == 0 and os.geteuid() != 0:
+                    return True
+            except OSError:
+                pass
+        return False
+
     def _populate_tree(self):
         self.tree.blockSignals(True)
         self.tree.clear()
 
+        is_root = (os.geteuid() == 0)
+
         for item in self.scanned_items:
             tree_item = QTreeWidgetItem()
+            is_root_only = (not is_root) and self._is_item_root_only(item)
+
             # Column 0: Checkbox
-            if item.status == "PROTECTED":
-                tree_item.setFlags(tree_item.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
+            if item.status == "PROTECTED" or is_root_only:
+                tree_item.setFlags(tree_item.flags() & ~Qt.ItemFlag.ItemIsUserCheckable & ~Qt.ItemFlag.ItemIsEnabled)
                 tree_item.setCheckState(0, Qt.CheckState.Unchecked)
             else:
-                tree_item.setFlags(tree_item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+                tree_item.setFlags(tree_item.flags() | Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled)
                 tree_item.setCheckState(
                     0, Qt.CheckState.Checked if item.is_selected else Qt.CheckState.Unchecked
                 )
 
             # Column 1: Name
             tree_item.setText(1, item.name)
-            tree_item.setToolTip(1, item.path)
 
             # Column 2: Status Badge
-            tree_item.setText(2, self._format_status_badge(item.status, item.category))
+            if is_root_only:
+                tree_item.setText(2, "🔒 Root Only")
+            else:
+                tree_item.setText(2, self._format_status_badge(item.status, item.category))
 
             # Column 3: Category
             tree_item.setText(3, item.category)
@@ -337,21 +361,36 @@ class ScannerTab(QWidget):
             tree_item.setText(5, item.formatted_date)
 
             # Column 6: Reason
-            tree_item.setText(6, item.reason)
+            reason_text = item.reason
+            if is_root_only:
+                reason_text += " [Root privileges required to clean]"
+            tree_item.setText(6, reason_text)
 
             # Styling colors per status
-            if item.status == "CONFIRMED_ORPHAN":
-                tree_item.setForeground(1, QColor("#ff7b72"))
-                tree_item.setForeground(2, QColor("#ff7b72"))
-            elif item.status == "PROBABLE_ORPHAN":
-                tree_item.setForeground(1, QColor("#f5c211"))
-                tree_item.setForeground(2, QColor("#f5c211"))
-            elif item.status == "ACTIVE_APP":
-                tree_item.setForeground(1, QColor("#7ee787"))
-                tree_item.setForeground(2, QColor("#7ee787"))
-            elif item.status == "PROTECTED":
-                tree_item.setForeground(1, QColor("#79c0ff"))
-                tree_item.setForeground(2, QColor("#79c0ff"))
+            if is_root_only:
+                disabled_color = QColor("#6e7681")
+                for col in range(7):
+                    tree_item.setForeground(col, disabled_color)
+                tooltip = (
+                    f"Root privileges required to delete system configuration ({item.path}). "
+                    f"Relaunch ConfClean FC as root via pkexec."
+                )
+                for col in range(7):
+                    tree_item.setToolTip(col, tooltip)
+            else:
+                tree_item.setToolTip(1, item.path)
+                if item.status == "CONFIRMED_ORPHAN":
+                    tree_item.setForeground(1, QColor("#ff7b72"))
+                    tree_item.setForeground(2, QColor("#ff7b72"))
+                elif item.status == "PROBABLE_ORPHAN":
+                    tree_item.setForeground(1, QColor("#f5c211"))
+                    tree_item.setForeground(2, QColor("#f5c211"))
+                elif item.status == "ACTIVE_APP":
+                    tree_item.setForeground(1, QColor("#7ee787"))
+                    tree_item.setForeground(2, QColor("#7ee787"))
+                elif item.status == "PROTECTED":
+                    tree_item.setForeground(1, QColor("#79c0ff"))
+                    tree_item.setForeground(2, QColor("#79c0ff"))
 
             tree_item.setData(0, Qt.ItemDataRole.UserRole, item)
             self.tree.addTopLevelItem(tree_item)
@@ -412,14 +451,24 @@ class ScannerTab(QWidget):
         if column == 0:
             scan_item: ScanItem = item.data(0, Qt.ItemDataRole.UserRole)
             if scan_item:
-                scan_item.is_selected = (item.checkState(0) == Qt.CheckState.Checked)
+                is_root = (os.geteuid() == 0)
+                if scan_item.status == "PROTECTED" or (not is_root and self._is_item_root_only(scan_item)):
+                    self.tree.blockSignals(True)
+                    item.setCheckState(0, Qt.CheckState.Unchecked)
+                    self.tree.blockSignals(False)
+                    scan_item.is_selected = False
+                else:
+                    scan_item.is_selected = (item.checkState(0) == Qt.CheckState.Checked)
             self._update_selected_stats()
 
     def _update_selected_stats(self):
+        is_root = (os.geteuid() == 0)
         selected_count = 0
         selected_bytes = 0
         for it in self.scanned_items:
             if it.is_selected and it.status != "PROTECTED":
+                if not is_root and self._is_item_root_only(it):
+                    continue
                 selected_count += 1
                 selected_bytes += it.size_bytes
 
@@ -434,12 +483,15 @@ class ScannerTab(QWidget):
         self.lbl_selected_stats.setText(f"Selected: {selected_count} items ({size_str})")
 
     def _select_all(self):
+        is_root = (os.geteuid() == 0)
         self.tree.blockSignals(True)
         for idx in range(self.tree.topLevelItemCount()):
             item = self.tree.topLevelItem(idx)
             if not item.isHidden():
                 scan_item: ScanItem = item.data(0, Qt.ItemDataRole.UserRole)
                 if scan_item and scan_item.status != "PROTECTED":
+                    if not is_root and self._is_item_root_only(scan_item):
+                        continue
                     item.setCheckState(0, Qt.CheckState.Checked)
                     scan_item.is_selected = True
         self.tree.blockSignals(False)
@@ -457,12 +509,13 @@ class ScannerTab(QWidget):
         self._update_selected_stats()
 
     def _select_orphans_only(self):
+        is_root = (os.geteuid() == 0)
         self.tree.blockSignals(True)
         for idx in range(self.tree.topLevelItemCount()):
             item = self.tree.topLevelItem(idx)
             scan_item: ScanItem = item.data(0, Qt.ItemDataRole.UserRole)
             if scan_item:
-                if scan_item.status == "CONFIRMED_ORPHAN":
+                if scan_item.status == "CONFIRMED_ORPHAN" and (is_root or not self._is_item_root_only(scan_item)):
                     item.setCheckState(0, Qt.CheckState.Checked)
                     scan_item.is_selected = True
                 else:
@@ -551,7 +604,11 @@ class ScannerTab(QWidget):
         if hasattr(self, "clean_worker") and self.clean_worker and self.clean_worker.isRunning():
             return
 
-        items_to_clean = [it for it in self.scanned_items if it.is_selected and it.status != "PROTECTED"]
+        is_root = (os.geteuid() == 0)
+        items_to_clean = [
+            it for it in self.scanned_items
+            if it.is_selected and it.status != "PROTECTED" and (is_root or not self._is_item_root_only(it))
+        ]
         if not items_to_clean:
             QMessageBox.information(self, "No Selection", "Please select at least one item to clean.")
             return

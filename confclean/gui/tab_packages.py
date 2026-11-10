@@ -4,6 +4,7 @@ Identifies unneeded dependencies (autoremove) and old kernels while strictly pro
 """
 
 import fnmatch
+import os
 import subprocess
 from typing import List, Optional
 
@@ -80,7 +81,14 @@ class PackageTab(QWidget):
         h_layout.addStretch()
 
         self.btn_clean_cache = QPushButton("🧹 Purge DNF Cache")
-        self.btn_clean_cache.setToolTip("Purge downloaded RPM packages, metadata, and PackageKit cache")
+        is_root = (os.geteuid() == 0) or getattr(self.cache_cleaner, "is_root", False)
+        self.btn_clean_cache.setEnabled(is_root)
+        if not is_root:
+            self.btn_clean_cache.setToolTip(
+                "Purging system DNF package cache requires root privileges. Relaunch ConfClean FC as root via pkexec."
+            )
+        else:
+            self.btn_clean_cache.setToolTip("Purge downloaded RPM packages, metadata, and PackageKit cache")
         self.btn_clean_cache.clicked.connect(self._purge_package_cache)
         h_layout.addWidget(self.btn_clean_cache)
 
@@ -496,6 +504,16 @@ class PackageTab(QWidget):
 
     def _purge_package_cache(self):
         """Purges DNF and PackageKit download caches directly from Package tab."""
+        is_root = (os.geteuid() == 0) or getattr(self.cache_cleaner, "is_root", False)
+        if not is_root:
+            QMessageBox.warning(
+                self,
+                "Root Privileges Required",
+                "Purging the system DNF package cache requires root privileges.\n\n"
+                "Please relaunch ConfClean FC as root via pkexec to enable.",
+            )
+            return
+
         cats = [c for c in self.cache_cleaner.scan_categories() if c.category_id == "dnf_cache"]
         if not cats:
             QMessageBox.information(self, "Package Cache", "No package cache found.")

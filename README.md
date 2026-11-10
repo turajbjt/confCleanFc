@@ -7,7 +7,7 @@
 [![RPM Package](https://img.shields.io/badge/RPM-Universal%20noarch-red?logo=redhat)](packaging/)
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/License-GPL--3.0--or--later-blue.svg)](LICENSE)
 [![Safety](https://img.shields.io/badge/Safety-Pre--Clean%20Backups%20%26%20Ironclad%20Safelist-26a269)](docs/SAFETY.md)
-[![Tests](https://img.shields.io/badge/Tests-140%2F140%20Passing-brightgreen)](tests/)
+[![Tests](https://img.shields.io/badge/Tests-155%2F155%20Passing-brightgreen)](tests/)
 
 **ConfClean FC** is a powerful, safety-first system cleaner, orphan configuration purger, and maintenance suite built specifically for **Fedora Linux** (Fedora 40, 41, 42, 43, 44, 45+) and compatible **RPM-based distributions** (Rocky Linux, CentOS Stream, RHEL, and AlmaLinux).
 
@@ -90,20 +90,20 @@ ConfClean FC requires **Python 3.9+** and **PyQt6** for its graphical interface:
 You can directly install the pre-built unified `.rpm` package included in the repository using `dnf` or `rpm` (compatible across Fedora 40+, CentOS Stream, Rocky Linux, and RHEL):
 ```bash
 # Install binary RPM locally with automatic dependency resolution:
-sudo dnf install ./confclean-fc-1.1.4-14.noarch.rpm
+sudo dnf install ./confclean-fc-1.1.4-15.noarch.rpm
 
 # Or with rpm:
-sudo rpm -ivh ./confclean-fc-1.1.4-14.noarch.rpm
+sudo rpm -ivh ./confclean-fc-1.1.4-15.noarch.rpm
 ```
 
 #### Rebuilding or Inspecting from Source RPM (SRPM):
-The repository also includes the official source RPM (`confclean-fc-1.1.4-14.src.rpm`), enabling full auditability, reproducible rebuilds, and mock/chroot building:
+The repository also includes the official source RPM (`confclean-fc-1.1.4-15.src.rpm`), enabling full auditability, reproducible rebuilds, and mock/chroot building:
 ```bash
 # Rebuild binary RPM directly from the source RPM:
-rpmbuild --rebuild ./confclean-fc-1.1.4-14.src.rpm
+rpmbuild --rebuild ./confclean-fc-1.1.4-15.src.rpm
 
 # Or inspect the spec file and source archive:
-rpm -ivh ./confclean-fc-1.1.4-14.src.rpm
+rpm -ivh ./confclean-fc-1.1.4-15.src.rpm
 ```
 
 Verify package integrity using the included checksums:
@@ -249,6 +249,11 @@ The **Restore & Backups** tab allows you to:
 * **Redundant Old Kernels**: Only older redundant kernels (3rd+ kernel versions, not in safelist) are suggested for removal.
 * **Defense-in-Depth Removal Verification**: Safelisted packages are strictly omitted from batch removal commands generated across DNF, Flatpak, and Snap.
 
+### 6. Transparent Privilege Differentiation (Root vs. User)
+* **Automatic Graying of Root-Only Controls**: When executing in normal user mode, controls and categories requiring system root permissions (such as purging system DNF package cache, systemd journal archives, ABRT crash reports, and system configuration leftovers in `/etc`) are visibly grayed out, uncheckable, and equipped with explanatory tooltips.
+* **Selection Helper Protection**: The `Select All` and `Select Only Orphans` helpers strictly exclude root-only items when unprivileged, preventing accidental selection or permission-denied errors.
+* **Header Elevation**: Users can elevate directly via PolicyKit (`pkexec`) at any time using the header button.
+
 ---
 
 ## 📚 Detailed Documentation
@@ -306,7 +311,7 @@ confCleanFc/
 │   ├── confclean-fc.spec     # Universal RPM packaging spec file
 │   ├── io.github.confclean_fc.policy # Polkit authentication policy
 │   └── rpmbuild-runner.c     # Standalone C runner using librpm/librpmbuild
-├── tests/                    # Automated unit test suite (152 tests)
+├── tests/                    # Automated unit test suite (155 tests)
 ├── confclean.desktop         # Freedesktop application shortcut
 ├── install-desktop.sh        # Installer script for GNOME Application Grid
 ├── uninstall-desktop.sh      # Uninstaller script for desktop shortcuts
@@ -335,7 +340,7 @@ Run the full automated test suite:
 python3 -m unittest discover -s tests
 ```
 
-### Test Coverage Highlights (152 Unit Tests):
+### Test Coverage Highlights (155 Unit Tests):
 * **`tests/test_safelist.py`** (8 tests): Core system patterns, root dirs, /etc files, security/credential protection, developer toolchains, package safelist matching and pattern wildcards, uninstalled orphan allowances, custom whitelist JSON persistence, dynamic auto-reloading, and error recovery.
 * **`tests/test_detector.py`** (11 tests): SystemDetector processes, exact and component Flatpak matching, Snap application detection, known application mappings (30 curated app aliases), RPM direct and version/flavor suffix matching, binary PATH searches, desktop file parser, distinct fork handling (`cura-lulzbot` vs `cura`).
 * **`tests/test_scanner.py`** (14 tests): ScanItem size and date formatting, `get_path_stats` file/dir/symlink/missing, `_analyze_item` (safelist, rpmsave, rpmnew, active, orphan > 14 days, probable <= 14 days), broken `.desktop` and autostart entry detection, broken symlink detection, `.rpmnew` unified diff engine (`get_rpm_diff`), `scan_all` orchestration and progress callback.
@@ -347,7 +352,7 @@ python3 -m unittest discover -s tests
 * **`tests/test_package_manager.py`** (17 tests): PackageSuggestion NEVRA and size formatting, `removal_spec` for exact version targeting, `get_removal_command` root vs user (pkexec) and sudo fallback, `_get_old_kernels` sorting and running kernel protection, user-safelisted retired package protection, user-safelisted unneeded dependency protection, user-safelisted old kernel protection, defense-in-depth removal command assertion, `_get_unneeded_packages`, `_get_duplicate_packages`, Flatpak unused runtimes query & graceful degradation when missing, Snap disabled revisions query & graceful degradation when missing, single-authentication privilege escalation batching, progress reporting.
 * **`tests/test_app_resetter.py`** (6 tests): AppResetProfile formatting, `discover_reset_profiles` for 30 known apps and Flatpaks, safelist refusal, factory reset with pre-reset backup and path wiping, dry-run by default verification, empty path validation.
 * **`tests/test_cli.py`** (23 tests): `format_table` ASCII alignment, `--scan` output, `--dry-run` simulation, default dry-run on `--clean`, `--clean` with `--force`, user cancellation on prompt, `--cache` listing, cache clean dry-run by default, cache clean apply, `--packages` listing with DNF/Flatpak/Snap and batched removal commands, `--safelist` listing, `--safelist-add`, `--safelist-remove`, safelist package protection verification, `--restore list`, `--reset-app` dry run & apply, `--diff` unified diff viewer, `--selinux-status`, `--selinux-fix-boot`, symlinks scan and clean.
-* **`tests/test_gui_headless.py`** (25 tests): All 10 asynchronous workers (`ScanWorker`, `CleanWorker`, `PackageScanWorker`, `CacheCleanWorker`, `AppResetWorker`, `RestoreWorker`, `BackupListWorker`, `ArchiveInspectWorker`, `PackageRemovalWorker`, `SELinuxWorker`), offscreen testing of `ScannerTab` (including broken `.desktop` entry display and double-click diff viewer invocation), `RpmDiffDialog` (colorization and clipboard copy), `PackageTab` (Flatpak/Snap category badges, batched package removal, SELinux onboot scheduling, right-click context menu safelisting, batch Safelist Selected button, dynamic protection re-evaluation), `CacheTab`, `AppResetTab`, `RestoreTab`, `LogsTab`, `SettingsTab` (elevation logic and custom whitelist live auto-refresh), `MainWindow` multi-tab navigation, and verification that Dry Run is checked by default across all tabs.
+* **`tests/test_gui_headless.py`** (27 tests): All 10 asynchronous workers (`ScanWorker`, `CleanWorker`, `PackageScanWorker`, `CacheCleanWorker`, `AppResetWorker`, `RestoreWorker`, `BackupListWorker`, `ArchiveInspectWorker`, `PackageRemovalWorker`, `SELinuxWorker`), offscreen testing of `ScannerTab` (including broken `.desktop` entry display and double-click diff viewer invocation), `RpmDiffDialog` (colorization and clipboard copy), `PackageTab` (Flatpak/Snap category badges, batched package removal, SELinux onboot scheduling, right-click context menu safelisting, batch Safelist Selected button, dynamic protection re-evaluation), `CacheTab`, `AppResetTab`, `RestoreTab`, `LogsTab`, `SettingsTab` (elevation logic and custom whitelist live auto-refresh), `MainWindow` multi-tab navigation, and verification that Dry Run is checked by default across all tabs.
 * **`tests/test_selinux.py`** (8 tests): SELinux status detection, scheduling on-boot fix via `fixfiles -B onboot` using root/pkexec/sudo, on-boot cancellation removing `/.autorelabel`, command argument construction, and error resilience.
 * **`tests/test_version.py`** (3 tests): Version synchronization across `confclean/__init__.py`, `pyproject.toml`, and RPM packaging spec (`confclean-fc.spec`).
 

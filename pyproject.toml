@@ -10,8 +10,9 @@ readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "GPL-3.0-or-later" }
 authors = [
-    { name = "James Turansky", email = "turajb@plugnpay.com" }
+    { name = "James Turansky" }
 ]
+urls = { Homepage = "https://builddesigncreate.com" }
 keywords = ["cleaner", "fedora", "rpm", "cache", "orphan-config", "pyqt6", "system-maintenance"]
 dependencies = [
     "PyQt6>=6.5.0",

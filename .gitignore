@@ -5,6 +5,7 @@ __pycache__/
 .pytest_cache/
 rpmbuild/
 dist/
+*.egg-info/
 packaging/rpmbuild-runner
 *.rpm
 !confclean-fc-*.rpm

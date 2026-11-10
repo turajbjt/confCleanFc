@@ -792,11 +792,18 @@ class TestGUIHeadless(unittest.TestCase):
         mock_selinux.cancel_onboot_fix.assert_called_once_with(use_pkexec=True)
 
         # Test DNF cache purge from package tab
+        self.assertFalse(tab.btn_clean_cache.isEnabled(), "DNF cache button must be disabled for non-root users")
         cat1 = MagicMock()
         cat1.category_id = "dnf_cache"
         cat1.formatted_size = "200.0 MB"
         self.mock_cache.scan_categories.return_value = [cat1]
         self.mock_cache.clean_category.return_value = (1024 * 1024 * 200, 15, "Cleaned")
+        tab._purge_package_cache()
+        self.mock_cache.clean_category.assert_not_called()
+
+        # When elevated as root, cache purge is allowed
+        self.mock_cache.is_root = True
+        tab.btn_clean_cache.setEnabled(True)
         tab._purge_package_cache()
         self.mock_cache.clean_category.assert_called_once_with(cat1, dry_run=False)
 
@@ -868,6 +875,104 @@ class TestGUIHeadless(unittest.TestCase):
         worker.run()
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0][0].name, "Test App")
+
+    def test_cache_tab_root_categories_grayed_out_for_user(self):
+        cat_user = CacheCategory("user_cache", "User Cache", "User level cache", False, ["/home/user/.cache"], size_bytes=1000)
+        cat_root = CacheCategory("dnf_cache", "DNF Cache", "Root level DNF cache", True, ["/var/cache/dnf"], size_bytes=5000)
+        self.mock_cache.scan_categories.return_value = [cat_user, cat_root]
+
+        # 1. Non-root user: root category must be disabled & uncheckable
+        self.mock_cache.is_root = False
+        tab = CacheTab(self.mock_cache)
+        tab.scan_caches()
+
+        chk_user = tab.table.item(0, 0)
+        chk_root = tab.table.item(1, 0)
+        name_root = tab.table.item(1, 1)
+        priv_root = tab.table.item(1, 3)
+
+        self.assertTrue(chk_user.flags() & Qt.ItemFlag.ItemIsEnabled)
+        self.assertTrue(chk_user.flags() & Qt.ItemFlag.ItemIsUserCheckable)
+
+        self.assertFalse(chk_root.flags() & Qt.ItemFlag.ItemIsEnabled)
+        self.assertFalse(chk_root.flags() & Qt.ItemFlag.ItemIsUserCheckable)
+        self.assertFalse(name_root.flags() & Qt.ItemFlag.ItemIsEnabled)
+        self.assertIn("Root Required", priv_root.text())
+        self.assertIn("pkexec", chk_root.toolTip())
+
+        # 2. Elevated as root: root category must be enabled & checkable
+        self.mock_cache.is_root = True
+        tab.scan_caches()
+        chk_root_elevated = tab.table.item(1, 0)
+        self.assertTrue(chk_root_elevated.flags() & Qt.ItemFlag.ItemIsEnabled)
+        self.assertTrue(chk_root_elevated.flags() & Qt.ItemFlag.ItemIsUserCheckable)
+
+    def test_scanner_tab_root_items_grayed_out_for_user(self):
+        item_user = ScanItem(
+            path="/home/user/.config/old_app",
+            name="old_app",
+            category="config",
+            is_directory=True,
+            size_bytes=1024,
+            file_count=1,
+            last_modified=0.0,
+            status="CONFIRMED_ORPHAN",
+            reason="Orphan config",
+            suggested_action="clean",
+            is_selected=False,
+        )
+        item_root = ScanItem(
+            path="/etc/nginx/nginx.conf.rpmsave",
+            name="nginx.conf.rpmsave",
+            category="system_etc",
+            is_directory=False,
+            size_bytes=2048,
+            file_count=1,
+            last_modified=0.0,
+            status="CONFIRMED_ORPHAN",
+            reason="RPM upgrade leftover",
+            suggested_action="clean",
+            is_selected=False,
+        )
+
+        tab = ScannerTab(self.mock_scanner, self.mock_cleaner, self.mock_safety)
+        tab.scanned_items = [item_user, item_root]
+
+        # 1. When running as non-root user (geteuid != 0)
+        with patch("os.geteuid", return_value=1000):
+            tab._populate_tree()
+            tree_user = tab.tree.topLevelItem(0)
+            tree_root = tab.tree.topLevelItem(1)
+
+            # User item is enabled and checkable
+            self.assertTrue(tree_user.flags() & Qt.ItemFlag.ItemIsEnabled)
+            self.assertTrue(tree_user.flags() & Qt.ItemFlag.ItemIsUserCheckable)
+
+            # Root item is disabled, uncheckable, has Root Only badge and tooltip
+            self.assertFalse(tree_root.flags() & Qt.ItemFlag.ItemIsEnabled)
+            self.assertFalse(tree_root.flags() & Qt.ItemFlag.ItemIsUserCheckable)
+            self.assertEqual(tree_root.checkState(0), Qt.CheckState.Unchecked)
+            self.assertIn("Root Only", tree_root.text(2))
+            self.assertIn("pkexec", tree_root.toolTip(0))
+
+            # Select All should not select root-only items
+            tab._select_all()
+            self.assertTrue(item_user.is_selected)
+            self.assertFalse(item_root.is_selected)
+            self.assertEqual(tree_root.checkState(0), Qt.CheckState.Unchecked)
+
+            # Select Only Orphans should not select root-only items
+            tab._select_none()
+            tab._select_orphans_only()
+            self.assertTrue(item_user.is_selected)
+            self.assertFalse(item_root.is_selected)
+
+        # 2. When running as root (geteuid == 0)
+        with patch("os.geteuid", return_value=0):
+            tab._populate_tree()
+            tree_root_elevated = tab.tree.topLevelItem(1)
+            self.assertTrue(tree_root_elevated.flags() & Qt.ItemFlag.ItemIsEnabled)
+            self.assertTrue(tree_root_elevated.flags() & Qt.ItemFlag.ItemIsUserCheckable)
 
 
 if __name__ == "__main__":
